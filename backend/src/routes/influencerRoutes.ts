@@ -227,8 +227,9 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
       filter.videoType = new RegExp(`^${escapeRegex(deliverable.trim())}$`, 'i');
     }
 
-    const pageNum = req.query.page ? Math.max(1, Number(req.query.page)) : undefined;
-    const limitNum = req.query.limit ? Math.max(1, Number(req.query.limit)) : 10;
+    const isAll = req.query.page === 'all' || req.query.limit === 'all' || !req.query.page;
+    const pageNum = (!isAll && req.query.page) ? Math.max(1, Number(req.query.page)) : undefined;
+    const limitNum = (!isAll && req.query.limit) ? Math.max(1, Number(req.query.limit)) : undefined;
 
     // Fetch dynamic distinct filter options from database for this category & timeframe scope
     const baseCategoryFilter: any = { isDeleted: { $ne: true } };
@@ -262,7 +263,7 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
       .populate('brandId', 'brandName brandId logo')
       .sort({ transactionDate: 1, orderDate: 1, sNo: 1 });
 
-    if (pageNum !== undefined) {
+    if (pageNum !== undefined && limitNum !== undefined) {
       query = query.skip((pageNum - 1) * limitNum).limit(limitNum);
     }
 
@@ -290,9 +291,9 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
       },
       pagination: {
         page: pageNum || 1,
-        limit: limitNum,
+        limit: limitNum || totalCount,
         total: totalCount,
-        totalPages: Math.max(1, Math.ceil(totalCount / limitNum))
+        totalPages: limitNum ? Math.max(1, Math.ceil(totalCount / limitNum)) : 1
       },
       data: influencers,
       message: influencers.length === 0 ? 'No records found' : 'Influencer records fetched successfully'

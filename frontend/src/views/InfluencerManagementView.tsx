@@ -694,28 +694,16 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
   const [serverTotalItems, setServerTotalItems] = useState(0);
   const itemsPerPage = 10;
 
-  // Fetch Influencers with Server-Side Pagination & Filters
-  const fetchInfluencers = async (
-    page = currentPage,
-    fBrand = filterBrand,
-    fManager = filterManager,
-    fStatus = filterStatus,
-    fDeliverable = filterDeliverable,
-    search = searchTerm
-  ) => {
+  // Fetch All Influencers for Active Timeframe & Category (Keeps all card counters intact)
+  const fetchInfluencers = async () => {
     setLoading(true);
     try {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth() + 1;
 
-      let url = `/influencers?timeframe=${timeframe}&year=${year}&month=${month}&page=${page}&limit=${itemsPerPage}`;
+      let url = `/influencers?timeframe=${timeframe}&year=${year}&month=${month}&page=all&limit=all`;
       if (viewMode === 'Paid Collaborations') url += '&category=Paid';
       if (viewMode === 'Barter Collaborations') url += '&category=Barter';
-      if (search && search.trim()) url += `&search=${encodeURIComponent(search.trim())}`;
-      if (fBrand && fBrand.trim()) url += `&brand=${encodeURIComponent(fBrand.trim())}`;
-      if (fManager && fManager.trim()) url += `&manager=${encodeURIComponent(fManager.trim())}`;
-      if (fStatus && fStatus.trim()) url += `&status=${encodeURIComponent(fStatus.trim())}`;
-      if (fDeliverable && fDeliverable.trim()) url += `&deliverable=${encodeURIComponent(fDeliverable.trim())}`;
 
       const res = await api.get(url);
       if (res.success) {
@@ -800,11 +788,11 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
     } else if (viewMode === 'Targets & Goals') {
       fetchTargets();
       fetchTeamBreakdown();
-      fetchInfluencers(1, filterBrand, filterManager, filterStatus, filterDeliverable, searchTerm);
+      fetchInfluencers();
     } else {
-      fetchInfluencers(1, filterBrand, filterManager, filterStatus, filterDeliverable, searchTerm);
+      fetchInfluencers();
     }
-  }, [activeCategory, timeframe, currentDate, searchTerm, viewMode, selectedPayLogType, logFilterUser, logFilterRole, logFilterModule, logFilterAction, logSearchTerm, filterBrand, filterManager, filterStatus, filterDeliverable]);
+  }, [activeCategory, timeframe, currentDate, viewMode, selectedPayLogType, logFilterUser, logFilterRole, logFilterModule, logFilterAction, logSearchTerm]);
 
   // Target Action Handlers
   const handleOpenCreateTargetModal = (defaultType: 'Paid' | 'Barter' = 'Paid') => {
@@ -1506,10 +1494,10 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
 
   const barterPct = barterGoal > 0 ? Math.min(100, Math.round((barterAchieved / barterGoal) * 100)) : 0;
 
-  // Pagination
-  const totalPages = serverTotalPages || Math.ceil(filteredInfluencers.length / itemsPerPage) || 1;
+  // Table Pagination
+  const totalPages = Math.max(1, Math.ceil(filteredInfluencers.length / itemsPerPage));
   const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
-  const paginatedInfluencers = filteredInfluencers;
+  const paginatedInfluencers = filteredInfluencers.slice((safeCurrentPage - 1) * itemsPerPage, safeCurrentPage * itemsPerPage);
 
   const isAllSelectedOnPage =
     paginatedInfluencers.length > 0 &&
@@ -2531,18 +2519,18 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                   }}
                   className={`p-3.5 rounded-2xl border text-left transition-all duration-200 shadow-2xs hover:shadow-md flex items-center justify-between group cursor-pointer ${
                     filterStatus === 'Pending'
-                      ? 'bg-slate-800 text-white border-slate-900 ring-2 ring-slate-600'
-                      : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-slate-800'
+                      ? 'bg-orange-500 text-white border-orange-600 ring-2 ring-orange-400'
+                      : 'bg-white border-slate-200 hover:border-orange-300 hover:bg-orange-50/40 text-slate-800'
                   }`}
                 >
                   <div>
-                    <p className={`text-[10px] font-black uppercase tracking-wider ${filterStatus === 'Pending' ? 'text-slate-300' : 'text-slate-500'}`}>
+                    <p className={`text-[10px] font-black uppercase tracking-wider ${filterStatus === 'Pending' ? 'text-orange-100' : 'text-orange-800'}`}>
                       🟠 Pending
                     </p>
                     <h4 className="text-2xl font-black mt-0.5">{pendingCount}</h4>
-                    <p className={`text-[10px] font-bold ${filterStatus === 'Pending' ? 'text-slate-300' : 'text-slate-400'}`}>Initial Stage</p>
+                    <p className={`text-[10px] font-bold ${filterStatus === 'Pending' ? 'text-orange-100' : 'text-slate-400'}`}>Initial Stage</p>
                   </div>
-                  <div className={`p-2.5 rounded-xl transition ${filterStatus === 'Pending' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700 group-hover:scale-105'}`}>
+                  <div className={`p-2.5 rounded-xl transition ${filterStatus === 'Pending' ? 'bg-white/20 text-white' : 'bg-orange-100 text-orange-800 group-hover:scale-105'}`}>
                     <Layers size={20} />
                   </div>
                 </button>
@@ -2634,7 +2622,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                   {viewMode} Ledger
                 </h3>
                 <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                  Showing {filteredInfluencers.length} records • Real-time AD2ship financial margins and deliverable metrics.
+                  Showing {filteredInfluencers.length > 0 ? (safeCurrentPage - 1) * itemsPerPage + 1 : 0} to {Math.min(safeCurrentPage * itemsPerPage, filteredInfluencers.length)} of {filteredInfluencers.length} items • Real-time AD2ship financial margins and deliverable metrics.
                 </p>
               </div>
 
@@ -3065,11 +3053,10 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                 <Pagination
                   currentPage={safeCurrentPage}
                   totalPages={totalPages}
-                  totalItems={serverTotalItems || filteredInfluencers.length}
+                  totalItems={filteredInfluencers.length}
                   itemsPerPage={itemsPerPage}
                   onPageChange={(p) => {
                     setCurrentPage(p);
-                    fetchInfluencers(p);
                   }}
                 />
               </div>

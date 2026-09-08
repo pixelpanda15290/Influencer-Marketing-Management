@@ -202,40 +202,109 @@ export async function processBarterRows(rows: Record<string, string>[], currentS
     else if (lowerStat.includes('discuss') || lowerStat.includes('talk') || lowerStat.includes('connect')) finalStatus = 'In Discussion';
 
     let existing: any = null;
-    existing = await Influencer.findOne({ category: 'Barter', googleSheetId: currentSheetId, sheetRowIndex: idx });
+    if (currentSheetId) {
+      existing = await Influencer.findOne({ category: 'Barter', googleSheetId: currentSheetId, sheetRowIndex: idx });
+    }
+    if (!existing) {
+      existing = await Influencer.findOne({ category: 'Barter', sheetRowIndex: idx });
+    }
+    if (!existing && orderId && !orderId.toLowerCase().includes('directly')) {
+      existing = await Influencer.findOne({ category: 'Barter', orderId, brandName });
+    }
 
     if (existing) {
-      existing.brandName = brandName || existing.brandName;
-      existing.influencerName = cleanInfName;
-      existing.influencerInstagramId = instaId;
-      existing.profileLink = profileLinkVal;
-      existing.influencerManager = managerName;
-      existing.brandManagerTeam = brandManager;
-      existing.productLink = productLink;
-      existing.videoType = videoType;
-      existing.videoDescription = videoDescription;
-      existing.refVideoLink = refVideoLink;
-      existing.orderId = orderId;
-      existing.orderDate = orderId && parsedRowDate ? parsedRowDate : undefined;
-      existing.viewsCount = 0;
-      existing.ordersCount = 0;
-      existing.ordersGenerated = 0;
-      existing.googleSheetId = currentSheetId;
-      if (parsedRowDate) existing.transactionDate = parsedRowDate;
+      // 1. Preserve Brand Name: only update if sheet has brandName and existing is empty
+      if (brandName && (!existing.brandName || existing.brandName.trim() === '')) {
+        existing.brandName = brandName;
+      }
 
+      // 2. PRESERVE INFLUENCER NAME:
+      // If team member entered an influencer name in the CRM, NEVER overwrite or clear it!
+      // Only set from sheet if sheet actually has a valid creator name and existing is blank/placeholder
+      if (cleanInfName && cleanInfName !== '—' && (!existing.influencerName || existing.influencerName === '—' || existing.influencerName.trim() === '')) {
+        existing.influencerName = cleanInfName;
+      }
+
+      // 3. PRESERVE INSTAGRAM HANDLE & PROFILE LINK:
+      if (instaId && (!existing.influencerInstagramId || existing.influencerInstagramId.trim() === '')) {
+        existing.influencerInstagramId = instaId;
+      }
+      if (profileLinkVal && (!existing.profileLink || existing.profileLink.trim() === '')) {
+        existing.profileLink = profileLinkVal;
+      }
+
+      // 4. PRESERVE ASSIGNEE / MANAGERS:
+      if (managerName && (!existing.influencerManager || existing.influencerManager.trim() === '')) {
+        existing.influencerManager = managerName;
+      }
+      if (brandManager && (!existing.brandManagerTeam || existing.brandManagerTeam.trim() === '')) {
+        existing.brandManagerTeam = brandManager;
+      }
+
+      // 5. PRESERVE PRODUCT LINK & DELIVERABLES:
+      if (productLink && (!existing.productLink || existing.productLink.trim() === '')) {
+        existing.productLink = productLink;
+      }
+      if (videoType && (!existing.videoType || existing.videoType === 'Single Product Video')) {
+        existing.videoType = videoType;
+      }
+      if (videoDescription && (!existing.videoDescription || existing.videoDescription.trim() === '')) {
+        existing.videoDescription = videoDescription;
+      }
+      if (refVideoLink && (!existing.refVideoLink || existing.refVideoLink.trim() === '')) {
+        existing.refVideoLink = refVideoLink;
+      }
+      if (orderId && (!existing.orderId || existing.orderId.trim() === '')) {
+        existing.orderId = orderId;
+      }
+      if (orderId && parsedRowDate && !existing.orderDate) {
+        existing.orderDate = parsedRowDate;
+      }
+
+      // 6. NEVER RESET VIEWS OR ORDERS THAT THE TEAM TRACKED:
+      if (existing.viewsCount === undefined || existing.viewsCount === null) {
+        existing.viewsCount = 0;
+      }
+      if (existing.ordersCount === undefined || existing.ordersCount === null) {
+        existing.ordersCount = 0;
+      }
+      if (existing.ordersGenerated === undefined || existing.ordersGenerated === null) {
+        existing.ordersGenerated = 0;
+      }
+
+      if (currentSheetId) existing.googleSheetId = currentSheetId;
+      if (parsedRowDate && !existing.transactionDate) existing.transactionDate = parsedRowDate;
+
+      // 7. PRESERVE LIVE STATUS UPDATED BY TEAM:
+      // If team member already changed status to In Discussion, Parcel Sent, Under Review, Completed, Settled, etc., KEEP IT!
       if (finalStatus === 'Completed' || finalStatus === 'Approved') {
         existing.status = finalStatus;
         existing.isApproved = true;
       } else if (!existing.status || existing.status === 'Pending') {
-        existing.status = finalStatus;
+        if (finalStatus && finalStatus !== 'Pending') {
+          existing.status = finalStatus;
+        }
       }
 
-      existing.contentLink = contentLink;
-      existing.adsCode = adsCode;
-      existing.reason = reason;
-      existing.moneyReceivedBy = moneyReceivedBy;
-      existing.paymentDoneBy = paymentDoneBy;
-      existing.remark = remarkRaw;
+      // 8. PRESERVE CONTENT LINKS, ADS CODE, AND REMARKS:
+      if (contentLink && (!existing.contentLink || existing.contentLink.trim() === '')) {
+        existing.contentLink = contentLink;
+      }
+      if (adsCode && (!existing.adsCode || existing.adsCode.trim() === '')) {
+        existing.adsCode = adsCode;
+      }
+      if (reason && (!existing.reason || existing.reason.trim() === '')) {
+        existing.reason = reason;
+      }
+      if (moneyReceivedBy && (!existing.moneyReceivedBy || existing.moneyReceivedBy.trim() === '')) {
+        existing.moneyReceivedBy = moneyReceivedBy;
+      }
+      if (paymentDoneBy && (!existing.paymentDoneBy || existing.paymentDoneBy.trim() === '')) {
+        existing.paymentDoneBy = paymentDoneBy;
+      }
+      if (remarkRaw && (!existing.remark || existing.remark.trim() === '')) {
+        existing.remark = remarkRaw;
+      }
       existing.sheetRowIndex = idx;
 
       await existing.save();
@@ -291,11 +360,18 @@ export async function processBarterRows(rows: Record<string, string>[], currentS
   }
 
   // Scoped cleanup: Only remove stale rows belonging strictly to THIS specific Google Sheet ID
+  // CRITICAL: NEVER delete any record that the team has updated or added details to!
   if (currentSheetId && syncedDocIds.length > 0) {
     await Influencer.deleteMany({
       category: 'Barter',
       googleSheetId: currentSheetId,
-      _id: { $nin: syncedDocIds }
+      _id: { $nin: syncedDocIds },
+      $and: [
+        { $or: [{ influencerName: { $exists: false } }, { influencerName: '' }, { influencerName: '—' }] },
+        { $or: [{ status: { $exists: false } }, { status: 'Pending' }] },
+        { $or: [{ contentLink: { $exists: false } }, { contentLink: '' }] },
+        { $or: [{ adsCode: { $exists: false } }, { adsCode: '' }] }
+      ]
     });
   }
 
@@ -383,7 +459,7 @@ export async function syncBarterFromGoogleSheet(): Promise<{
       console.log(`[GoogleSheetSync] Using Google Service Account API v4 for Private Sheet (${extractedSheetId.slice(0, 8)}...)...`);
       const serviceAccountRows = await fetchViaServiceAccount(extractedSheetId);
       if (serviceAccountRows.length > 0) {
-        const syncedCount = await processBarterRows(serviceAccountRows);
+        const syncedCount = await processBarterRows(serviceAccountRows, extractedSheetId);
         config.lastSyncedAt = new Date();
         config.lastSyncedCount = syncedCount;
         config.lastSyncStatus = 'SUCCESS';
