@@ -6,7 +6,7 @@ import {
   Award, Clock, AlertCircle, CheckCircle2, ShieldCheck, Layers, RefreshCw, Users,
   Calendar, ChevronLeft, ChevronRight, CalendarDays, Loader2, Lock, Settings, X,
   Activity, Shield, Package, MessageSquare, Info, LayoutGrid, List,
-  Upload, Download, FileSpreadsheet, FileUp
+  Upload, Download, FileSpreadsheet, FileUp, Copy, Check
 } from 'lucide-react';
 import { api } from '../services/api';
 import { InfluencerTransaction, Brand, Employee, PaymentLogItem, TargetItem, TeamTargetBreakdown, MemberTargetItem, AuditLogItem } from '../types';
@@ -568,6 +568,48 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
 
   const openViewModal = (item: InfluencerTransaction) => {
     setSelectedViewItem(item);
+  };
+
+  // Copy Record State
+  const [copiedRecordId, setCopiedRecordId] = useState<string | null>(null);
+
+  const handleCopyRecord = (item: InfluencerTransaction) => {
+    const date = item.transactionDate
+      ? new Date(item.transactionDate).toLocaleDateString()
+      : item.connectedDate
+      ? new Date(item.connectedDate).toLocaleDateString()
+      : '—';
+    const fields = [
+      date,
+      item.influencerManager || '—',
+      item.brandName || '—',
+      item.influencerName || '—',
+      item.category || '—',
+      item.productLink || '—',
+      item.videoType || '—',
+      item.videoDescription || '—',
+      item.orderId || '—',
+      item.viewsCount !== undefined ? String(item.viewsCount) : '—',
+      item.ordersGenerated !== undefined ? String(item.ordersGenerated) : (item.ordersCount !== undefined ? String(item.ordersCount) : '—'),
+      item.brandOnboardingAmt !== undefined ? String(item.brandOnboardingAmt) : (item.inAmount !== undefined ? String(item.inAmount) : '—'),
+      item.influencerOnboardingAmt !== undefined ? String(item.influencerOnboardingAmt) : (item.outAmount !== undefined ? String(item.outAmount) : '—'),
+      item.status || '—',
+    ];
+    const text = fields.join('\t');
+    navigator.clipboard.writeText(text).then(() => {
+      setCopiedRecordId(item._id);
+      setTimeout(() => setCopiedRecordId(null), 2000);
+    }).catch(() => {
+      // Fallback for older browsers
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+      setCopiedRecordId(item._id);
+      setTimeout(() => setCopiedRecordId(null), 2000);
+    });
   };
 
   // Fetch Google Sheet Sync Status
@@ -3030,6 +3072,19 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                               title="Edit Record"
                             >
                               <Edit2 size={14} />
+                            </button>
+                            <button
+                              onClick={() => handleCopyRecord(item)}
+                              className={`p-1.5 rounded-lg transition ${
+                                copiedRecordId === item._id
+                                  ? 'text-emerald-600 bg-emerald-50'
+                                  : 'text-amber-600 hover:bg-amber-50'
+                              }`}
+                              title="Copy row data to clipboard"
+                            >
+                              {copiedRecordId === item._id
+                                ? <Check size={14} />
+                                : <Copy size={14} />}
                             </button>
                             <button
                               onClick={() => requestDeleteInfluencer(item)}
