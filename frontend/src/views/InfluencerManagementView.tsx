@@ -612,6 +612,97 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
     });
   };
 
+  // Export CSV Handler
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExportCSV = () => {
+    setIsExporting(true);
+    setTimeout(() => {
+      try {
+        const isBarterMode = viewMode === 'Barter Collaborations';
+        const isPaidMode   = viewMode === 'Paid Collaborations';
+
+        // Build headers dynamically based on view mode
+        const headers: string[] = [
+          '#', 'Date', 'Assignee', 'Brand', 'Influencer', 'Category', 'Product Link',
+        ];
+        if (isPaidMode || viewMode === 'All Collaborations') {
+          headers.push('Brand Price (IN)', 'Creator Price (OUT)', 'AD2ship Margin', 'Orders');
+        }
+        if (isBarterMode || viewMode === 'All Collaborations') {
+          headers.push('Deliverable', 'Video Description', 'Order ID', 'Views', 'Orders');
+        }
+        headers.push('Status');
+
+        const escape = (val: any): string => {
+          const str = val !== undefined && val !== null ? String(val) : '';
+          // Wrap in quotes if contains comma, newline or quote
+          if (str.includes(',') || str.includes('\n') || str.includes('"')) {
+            return `"${str.replace(/"/g, '""')}"`;
+          }
+          return str;
+        };
+
+        const rows = filteredInfluencers.map((item, idx) => {
+          const date = item.transactionDate
+            ? new Date(item.transactionDate).toLocaleDateString()
+            : item.connectedDate
+            ? new Date(item.connectedDate).toLocaleDateString()
+            : '';
+          const margin = (item.brandOnboardingAmt || item.inAmount || 0) - (item.influencerOnboardingAmt || item.outAmount || 0);
+          const orders = item.ordersGenerated !== undefined ? item.ordersGenerated : (item.ordersCount || 0);
+
+          const row: string[] = [
+            escape(idx + 1),
+            escape(date),
+            escape(item.influencerManager || ''),
+            escape(item.brandName || ''),
+            escape(item.influencerName || ''),
+            escape(item.category || ''),
+            escape(item.productLink || ''),
+          ];
+
+          if (isPaidMode || viewMode === 'All Collaborations') {
+            row.push(
+              escape(item.brandOnboardingAmt ?? item.inAmount ?? ''),
+              escape(item.influencerOnboardingAmt ?? item.outAmount ?? ''),
+              escape(margin),
+              escape(orders),
+            );
+          }
+          if (isBarterMode || viewMode === 'All Collaborations') {
+            row.push(
+              escape(item.videoType || ''),
+              escape(item.videoDescription || ''),
+              escape(item.orderId || ''),
+              escape(item.viewsCount ?? ''),
+              escape(orders),
+            );
+          }
+          row.push(escape(item.status || ''));
+          return row.join(',');
+        });
+
+        const csvContent = [headers.map(escape).join(','), ...rows].join('\n');
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const url  = URL.createObjectURL(blob);
+        const now  = new Date();
+        const fileName = `${viewMode.replace(/ /g, '_')}_${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}.csv`;
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', fileName);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      } catch (err) {
+        console.error('Export failed', err);
+      } finally {
+        setIsExporting(false);
+      }
+    }, 200);
+  };
+
   // Fetch Google Sheet Sync Status
   const fetchSyncStatus = async () => {
     try {
@@ -2677,6 +2768,19 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                 >
                   <FileSpreadsheet size={13} className="text-purple-600" />
                   <span>Import Past Month</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportCSV}
+                  disabled={isExporting || filteredInfluencers.length === 0}
+                  className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-xs font-black flex items-center gap-1.5 shadow-2xs transition cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={`Export ${filteredInfluencers.length} filtered records as CSV`}
+                >
+                  {isExporting
+                    ? <Loader2 size={13} className="text-emerald-600 animate-spin" />
+                    : <Download size={13} className="text-emerald-600" />}
+                  <span>{isExporting ? 'Exporting...' : 'Export'}</span>
                 </button>
 
                 {viewMode === 'Barter Collaborations' && (
