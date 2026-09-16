@@ -142,7 +142,13 @@ export const PendingApprovalModal: React.FC<PendingApprovalModalProps> = ({ curr
                     {emp.department && (
                       <div className="flex items-center gap-1.5 truncate">
                         <Briefcase size={13} className="text-purple-500 shrink-0" />
-                        <span className="text-slate-600">{typeof emp.department === 'object' && emp.department ? emp.department.name : emp.department}</span>
+                        <span className="text-slate-600">
+                          {typeof emp.department === 'object' && emp.department 
+                            ? emp.department.name 
+                            : (typeof emp.department === 'string' && /^[a-f\d]{24}$/i.test(emp.department) 
+                              ? 'Influencer Marketing' 
+                              : emp.department)}
+                        </span>
                       </div>
                     )}
                   </div>

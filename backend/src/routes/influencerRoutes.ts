@@ -137,16 +137,21 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
 
     const getDateQuery = (start: Date, end: Date) => ({
       $or: [
-        { transactionDate: { $gte: start, $lte: end } },
+        // 1. Primary: connectedDate
+        { connectedDate: { $gte: start, $lte: end } },
+        // 2. Fallback: transactionDate (only if connectedDate is not present)
         {
           $and: [
+            { $or: [{ connectedDate: { $exists: false } }, { connectedDate: null }] },
+            { transactionDate: { $gte: start, $lte: end } }
+          ]
+        },
+        // 3. Fallback: createdAt (only if both connectedDate and transactionDate are not present)
+        {
+          $and: [
+            { $or: [{ connectedDate: { $exists: false } }, { connectedDate: null }] },
             { $or: [{ transactionDate: { $exists: false } }, { transactionDate: null }] },
-            {
-              $or: [
-                { connectedDate: { $gte: start, $lte: end } },
-                { createdAt: { $gte: start, $lte: end } }
-              ]
-            }
+            { createdAt: { $gte: start, $lte: end } }
           ]
         }
       ]
@@ -261,7 +266,7 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
 
     let query = Influencer.find(filter)
       .populate('brandId', 'brandName brandId logo')
-      .sort({ transactionDate: 1, orderDate: 1, sNo: 1 });
+      .sort({ connectedDate: 1, transactionDate: 1, orderDate: 1, sNo: 1 });
 
     if (pageNum !== undefined && limitNum !== undefined) {
       query = query.skip((pageNum - 1) * limitNum).limit(limitNum);

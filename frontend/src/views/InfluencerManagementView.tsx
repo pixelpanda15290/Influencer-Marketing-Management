@@ -574,10 +574,10 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
   const [copiedRecordId, setCopiedRecordId] = useState<string | null>(null);
 
   const handleCopyRecord = (item: InfluencerTransaction) => {
-    const date = item.transactionDate
-      ? new Date(item.transactionDate).toLocaleDateString()
-      : item.connectedDate
+    const date = item.connectedDate
       ? new Date(item.connectedDate).toLocaleDateString()
+      : item.transactionDate
+      ? new Date(item.transactionDate).toLocaleDateString()
       : '—';
 
     const lines: string[] = [
@@ -685,10 +685,10 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
         };
 
         const rows = filteredInfluencers.map((item, idx) => {
-          const date = item.transactionDate
-            ? new Date(item.transactionDate).toLocaleDateString()
-            : item.connectedDate
+          const date = item.connectedDate
             ? new Date(item.connectedDate).toLocaleDateString()
+            : item.transactionDate
+            ? new Date(item.transactionDate).toLocaleDateString()
             : '';
           const margin = (item.brandOnboardingAmt || item.inAmount || 0) - (item.influencerOnboardingAmt || item.outAmount || 0);
           const orders = item.ordersGenerated !== undefined ? item.ordersGenerated : (item.ordersCount || 0);
@@ -1619,8 +1619,8 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
       valA = a.sNo || 0;
       valB = b.sNo || 0;
     } else if (sortKey === 'transactionDate') {
-      valA = a.transactionDate ? new Date(a.transactionDate).getTime() : (a.connectedDate ? new Date(a.connectedDate).getTime() : 0);
-      valB = b.transactionDate ? new Date(b.transactionDate).getTime() : (b.connectedDate ? new Date(b.connectedDate).getTime() : 0);
+      valA = a.connectedDate ? new Date(a.connectedDate).getTime() : (a.transactionDate ? new Date(a.transactionDate).getTime() : 0);
+      valB = b.connectedDate ? new Date(b.connectedDate).getTime() : (b.transactionDate ? new Date(b.transactionDate).getTime() : 0);
     }
 
     if (valA < valB) return sortDir === 'asc' ? -1 : 1;
@@ -2979,10 +2979,10 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                           </td>
 
                           <td className="p-3 border-r border-slate-100 font-semibold whitespace-nowrap text-slate-600">
-                            {item.transactionDate ? (
+                            {item.connectedDate ? (
+                              new Date(item.connectedDate).toLocaleDateString()
+                            ) : item.transactionDate ? (
                               new Date(item.transactionDate).toLocaleDateString()
-                            ) : item.connectedDate ? (
-                              <span className="text-purple-700 font-bold" title="Connection Date">{new Date(item.connectedDate).toLocaleDateString()}</span>
                             ) : (
                               '—'
                             )}

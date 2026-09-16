@@ -37,16 +37,21 @@ export const buildDateFilter = (timeframe?: string, year?: string | number, mont
 
   const getDateQuery = (start: Date, end: Date) => ({
     $or: [
-      { transactionDate: { $gte: start, $lte: end } },
+      // 1. Primary: connectedDate
+      { connectedDate: { $gte: start, $lte: end } },
+      // 2. Fallback: transactionDate (only if connectedDate is not present)
       {
         $and: [
+          { $or: [{ connectedDate: { $exists: false } }, { connectedDate: null }] },
+          { transactionDate: { $gte: start, $lte: end } }
+        ]
+      },
+      // 3. Fallback: createdAt (only if both connectedDate and transactionDate are not present)
+      {
+        $and: [
+          { $or: [{ connectedDate: { $exists: false } }, { connectedDate: null }] },
           { $or: [{ transactionDate: { $exists: false } }, { transactionDate: null }] },
-          {
-            $or: [
-              { connectedDate: { $gte: start, $lte: end } },
-              { createdAt: { $gte: start, $lte: end } }
-            ]
-          }
+          { createdAt: { $gte: start, $lte: end } }
         ]
       }
     ]
@@ -100,16 +105,21 @@ export const recalculateTargetProgress = async (target: any, customDateFilter?: 
       endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
     }
     filter.$or = [
-      { transactionDate: { $gte: startDate, $lte: endDate } },
+      // 1. Primary: connectedDate
+      { connectedDate: { $gte: startDate, $lte: endDate } },
+      // 2. Fallback: transactionDate
       {
         $and: [
+          { $or: [{ connectedDate: { $exists: false } }, { connectedDate: null }] },
+          { transactionDate: { $gte: startDate, $lte: endDate } }
+        ]
+      },
+      // 3. Fallback: createdAt
+      {
+        $and: [
+          { $or: [{ connectedDate: { $exists: false } }, { connectedDate: null }] },
           { $or: [{ transactionDate: { $exists: false } }, { transactionDate: null }] },
-          {
-            $or: [
-              { connectedDate: { $gte: startDate, $lte: endDate } },
-              { createdAt: { $gte: startDate, $lte: endDate } }
-            ]
-          }
+          { createdAt: { $gte: startDate, $lte: endDate } }
         ]
       }
     ];

@@ -391,7 +391,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ userRole, currentUse
                         </td>
 
                         <td className="px-6 py-4 text-slate-800 font-bold">
-                          {typeof emp.department === 'object' && emp.department ? emp.department.name : (emp.department || 'N/A')}
+                          {typeof emp.department === 'object' && emp.department 
+                            ? emp.department.name 
+                            : (typeof emp.department === 'string' && /^[a-f\d]{24}$/i.test(emp.department) 
+                              ? 'Influencer Marketing' 
+                              : (emp.department || 'N/A'))}
                         </td>
 
                         <td className="px-6 py-4 text-slate-700 font-semibold">
