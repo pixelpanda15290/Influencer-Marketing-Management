@@ -579,23 +579,64 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
       : item.connectedDate
       ? new Date(item.connectedDate).toLocaleDateString()
       : '—';
-    const fields = [
-      date,
-      item.influencerManager || '—',
-      item.brandName || '—',
-      item.influencerName || '—',
-      item.category || '—',
-      item.productLink || '—',
-      item.videoType || '—',
-      item.videoDescription || '—',
-      item.orderId || '—',
-      item.viewsCount !== undefined ? String(item.viewsCount) : '—',
-      item.ordersGenerated !== undefined ? String(item.ordersGenerated) : (item.ordersCount !== undefined ? String(item.ordersCount) : '—'),
-      item.brandOnboardingAmt !== undefined ? String(item.brandOnboardingAmt) : (item.inAmount !== undefined ? String(item.inAmount) : '—'),
-      item.influencerOnboardingAmt !== undefined ? String(item.influencerOnboardingAmt) : (item.outAmount !== undefined ? String(item.outAmount) : '—'),
-      item.status || '—',
+
+    const lines: string[] = [
+      `Date : ${date}`,
+      `Assignee : ${item.influencerManager || '—'}`,
     ];
-    const text = fields.join('\t');
+
+    if (item.brandManagerTeam) {
+      lines.push(`Brand Manager : ${item.brandManagerTeam}`);
+    }
+
+    lines.push(`Brand : ${item.brandName || '—'}`);
+    lines.push(`Influencer : ${item.influencerName || '—'}`);
+
+    if (item.influencerInstagramId || item.profileLink) {
+      lines.push(`Instagram : ${item.influencerInstagramId || item.profileLink}`);
+    }
+    if (item.phone) {
+      lines.push(`Phone : ${item.phone}`);
+    }
+
+    lines.push(`Category : ${item.category || 'Barter'}`);
+    lines.push(`Product Link : ${item.productLink || '—'}`);
+
+    if (item.category === 'Paid') {
+      const brandAmt = item.brandOnboardingAmt ?? item.inAmount ?? 0;
+      const infAmt = item.influencerOnboardingAmt ?? item.outAmount ?? 0;
+      const margin = brandAmt - infAmt;
+      const orders = item.ordersGenerated ?? item.ordersCount ?? 0;
+
+      lines.push(`Brand Price (IN) : ₹${new Intl.NumberFormat().format(brandAmt)}`);
+      if (item.moneyReceivedBy) lines.push(`Payment Received By : ${item.moneyReceivedBy}`);
+      lines.push(`Creator Price (OUT) : ₹${new Intl.NumberFormat().format(infAmt)}`);
+      if (item.paymentDoneBy) lines.push(`Payout Done By : ${item.paymentDoneBy}`);
+      lines.push(`AD2ship Margin : ₹${new Intl.NumberFormat().format(margin)}`);
+      lines.push(`Orders : ${orders}`);
+    } else {
+      // Barter details
+      lines.push(`Deliverable : ${item.videoType || '—'}`);
+      if (item.videoDescription) lines.push(`Video Description : ${item.videoDescription}`);
+      if (item.orderId) lines.push(`Order ID : ${item.orderId}`);
+      if (item.orderDate) lines.push(`Order Date : ${new Date(item.orderDate).toLocaleDateString()}`);
+      if (item.refVideoLink || item.referenceVideoLink) lines.push(`Ref Video Link : ${item.refVideoLink || item.referenceVideoLink}`);
+      if (item.contentLink) lines.push(`Content Link : ${item.contentLink}`);
+      const views = item.viewsCount ?? 0;
+      const orders = item.ordersGenerated ?? item.ordersCount ?? 0;
+      lines.push(`Views : ${views}`);
+      lines.push(`Orders : ${orders}`);
+    }
+
+    lines.push(`Status : ${item.status || 'Pending'}`);
+    if (item.approvalStatus && item.approvalStatus !== 'Pending') {
+      lines.push(`Approval Status : ${item.approvalStatus}`);
+    }
+    if (item.reason) {
+      lines.push(`Reason : ${item.reason}`);
+    }
+
+    const text = lines.join('\n');
     navigator.clipboard.writeText(text).then(() => {
       setCopiedRecordId(item._id);
       setTimeout(() => setCopiedRecordId(null), 2000);
