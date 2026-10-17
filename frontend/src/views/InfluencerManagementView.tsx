@@ -3,7 +3,7 @@ import {
   Sparkles, Plus, Search, Filter, DollarSign, User, Trash2, Edit2, 
   ArrowUpRight, ArrowDownRight, ExternalLink, Video, Link2, ChevronDown, 
   Receipt, Eye, ShoppingBag, ChevronUp, ChevronsUpDown, Target, TrendingUp,
-  Award, Clock, AlertCircle, CheckCircle2, ShieldCheck, Layers, RefreshCw, Users,
+  Award, Clock, AlertCircle, AlertTriangle, CheckCircle2, ShieldCheck, Layers, RefreshCw, Users,
   Calendar, ChevronLeft, ChevronRight, CalendarDays, Loader2, Lock, Settings, X,
   Activity, Shield, Package, MessageSquare, Info, LayoutGrid, List,
   Upload, Download, FileSpreadsheet, FileUp, Copy, Check
@@ -36,6 +36,27 @@ const isAchievedStatus = (s?: string) => {
   if (!s) return false;
   const st = s.toLowerCase();
   return st === 'completed' || st === 'approved' || st === 'settled';
+};
+
+// Helper to calculate days since parcel was sent (1-indexed: Day 1 = sent today, Day 2 = sent yesterday...)
+export const getDaysSinceParcel = (item: any): number => {
+  if (item.daysSinceParcelSent !== undefined && item.daysSinceParcelSent > 0) {
+    return item.daysSinceParcelSent;
+  }
+  const rawDate = item.parcelSentAt || (item.status === 'Parcel Sent' ? (item.statusUpdatedAt || item.orderDate || item.updatedAt) : null);
+  if (!rawDate) return 0;
+  const d = new Date(rawDate);
+  if (isNaN(d.getTime())) return 0;
+  const diffDays = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+  return Math.max(0, diffDays) + 1;
+};
+
+// Helper to check if a collaboration is escalated (Parcel Sent > 7 days, from 8th day onwards, without video)
+export const isCollaborationEscalated = (item: any): boolean => {
+  if (item.isEscalated !== undefined) return item.isEscalated;
+  if (item.status !== 'Parcel Sent') return false;
+  if (item.contentLink && item.contentLink.trim().length > 0) return false;
+  return getDaysSinceParcel(item) >= 8;
 };
 
 // Custom Premium Select Dropdown Component
@@ -189,7 +210,9 @@ const StatusPillDropdown: React.FC<{
                   ? 'bg-amber-100 text-amber-800 border-amber-300 hover:bg-amber-200'
                   : currentStatus === 'Settled'
                     ? 'bg-purple-100 text-purple-800 border-purple-300 hover:bg-purple-200'
-                    : 'bg-slate-100 text-slate-800 border-slate-300 hover:bg-slate-200'
+                    : currentStatus === 'Product Returned'
+                      ? 'bg-rose-100 text-rose-800 border-rose-300 hover:bg-rose-200'
+                      : 'bg-slate-100 text-slate-800 border-slate-300 hover:bg-slate-200'
         }`}
       >
         <option value="Pending" className="bg-white text-slate-900 font-bold py-1">🟠 Pending</option>
@@ -198,6 +221,7 @@ const StatusPillDropdown: React.FC<{
         <option value="Under Review" className="bg-white text-slate-900 font-bold py-1">🟡 Under Review</option>
         <option value="Completed" className="bg-white text-slate-900 font-bold py-1">🟢 Completed</option>
         <option value="Settled" className="bg-white text-slate-900 font-bold py-1">🟣 Settled</option>
+        <option value="Product Returned" className="bg-white text-slate-900 font-bold py-1">↩️ Product Returned</option>
       </select>
       <ChevronDown size={13} className="absolute right-2.5 pointer-events-none opacity-80" />
     </div>
@@ -425,6 +449,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
   const [filterDeliverable, setFilterDeliverable] = useState<string>('');
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
+  const [filterEscalated, setFilterEscalated] = useState<boolean>(false);
   const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
   const datePopoverRef = React.useRef<HTMLDivElement>(null);
 
@@ -1528,6 +1553,8 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
         if (!updated.underReviewAt) updated.underReviewAt = nowStr;
       } else if (newStatus === 'In Discussion') {
         if (!updated.inDiscussionAt) updated.inDiscussionAt = nowStr;
+      } else if (newStatus === 'Product Returned') {
+        if (!updated.productReturnedAt) updated.productReturnedAt = nowStr;
       }
       return updated;
     }));
@@ -1575,7 +1602,8 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
     { label: 'Parcel Sent', value: 'Parcel Sent', icon: '📦' },
     { label: 'Under Review', value: 'Under Review', icon: '🟡' },
     { label: 'Completed', value: 'Completed', icon: '🟢' },
-    { label: 'Settled', value: 'Settled', icon: '🟣' }
+    { label: 'Settled', value: 'Settled', icon: '🟣' },
+    { label: 'Product Returned', value: 'Product Returned', icon: '↩️' }
   ];
 
   const uniqueDeliverables: string[] = (dbFilterOptions.deliverables && dbFilterOptions.deliverables.length > 0)
@@ -1603,7 +1631,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
       .filter((x): x is string => Boolean(x))
   )).sort();
 
-  const hasActiveFilters = !!(filterBrand || filterManager || filterStatus || filterDeliverable || filterStartDate || filterEndDate || searchTerm);
+  const hasActiveFilters = !!(filterBrand || filterManager || filterStatus || filterDeliverable || filterStartDate || filterEndDate || filterEscalated || searchTerm);
 
   const resetAllFilters = () => {
     setFilterBrand('');
@@ -1612,6 +1640,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
     setFilterDeliverable('');
     setFilterStartDate('');
     setFilterEndDate('');
+    setFilterEscalated(false);
     setSearchTerm('');
   };
 
@@ -1619,6 +1648,11 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
   const filteredInfluencers = influencers.filter(i => {
     if (viewMode === 'Paid Collaborations' && i.category !== 'Paid') return false;
     if (viewMode === 'Barter Collaborations' && i.category !== 'Barter') return false;
+
+    // Filter by Escalation (Parcel Sent > 7 days without video, starting from 8th day)
+    if (filterEscalated && !isCollaborationEscalated(i)) {
+      return false;
+    }
 
     // Filter by Date Range (Start Date & End Date)
     if (filterStartDate || filterEndDate) {
@@ -2666,9 +2700,11 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
             const reviewCount = listForPipeline.filter(i => i.status === 'Under Review').length;
             const completedCount = listForPipeline.filter(i => i.status === 'Completed' || i.status === 'Approved' || i.status === 'Settled').length;
             const pendingCount = listForPipeline.filter(i => !i.status || i.status === 'Pending').length;
+            const escalatedCount = listForPipeline.filter(i => isCollaborationEscalated(i)).length;
 
             return (
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+              <>
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-4">
                 {/* Stage 1: In Discussion */}
                 <button
                   type="button"
@@ -2713,6 +2749,11 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                     </p>
                     <h4 className="text-2xl font-black mt-0.5">{parcelSentCount}</h4>
                     <p className={`text-[10px] font-bold ${filterStatus === 'Parcel Sent' ? 'text-indigo-100' : 'text-slate-400'}`}>Dispatched Products</p>
+                    {escalatedCount > 0 && (
+                      <span className="inline-flex items-center gap-1 mt-1 px-1.5 py-0.5 rounded-md text-[9px] font-black bg-rose-500 text-white animate-pulse">
+                        <AlertTriangle size={9} /> {escalatedCount} Overdue (Day 8+)
+                      </span>
+                    )}
                   </div>
                   <div className={`p-2.5 rounded-xl transition ${filterStatus === 'Parcel Sent' ? 'bg-white/20 text-white' : 'bg-indigo-100 text-indigo-800 group-hover:scale-105'}`}>
                     <Package size={20} />
@@ -2794,6 +2835,55 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                   </div>
                 </button>
               </div>
+
+              {/* High-Visibility Escalation Alert Banner */}
+              {escalatedCount > 0 && (
+                <div className={`rounded-2xl p-3.5 mb-4 border transition shadow-xs flex flex-wrap items-center justify-between gap-3 ${
+                  filterEscalated
+                    ? 'bg-rose-600 text-white border-rose-700 ring-2 ring-rose-400'
+                    : 'bg-rose-50/90 border-rose-200 text-rose-950'
+                }`}>
+                  <div className="flex items-center gap-3">
+                    <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
+                      filterEscalated ? 'bg-white/20 text-white' : 'bg-rose-600 text-white shadow-sm shadow-rose-600/30'
+                    }`}>
+                      <AlertTriangle size={18} className="animate-pulse" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className={`font-black text-xs uppercase tracking-wider ${filterEscalated ? 'text-white' : 'text-rose-900'}`}>
+                          ⚠️ Video Escalation Alert (Day 8+)
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                          filterEscalated ? 'bg-white text-rose-700' : 'bg-rose-600 text-white'
+                        }`}>
+                          {escalatedCount} {escalatedCount === 1 ? 'Collaboration Overdue' : 'Collaborations Overdue'}
+                        </span>
+                      </div>
+                      <p className={`text-xs font-semibold mt-0.5 ${filterEscalated ? 'text-rose-100' : 'text-rose-700'}`}>
+                        Parcel was dispatched more than 7 days ago, but video submission has not arrived yet. Immediate follow-up required!
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFilterEscalated(prev => !prev);
+                      setCurrentPage(1);
+                    }}
+                    className={`px-3.5 py-1.5 rounded-xl font-black text-xs transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                      filterEscalated
+                        ? 'bg-white text-rose-700 hover:bg-rose-50'
+                        : 'bg-rose-600 text-white hover:bg-rose-700 shadow-sm shadow-rose-600/30'
+                    }`}
+                  >
+                    <AlertTriangle size={12} />
+                    <span>{filterEscalated ? 'Showing Escalated (Click to Reset)' : `Filter Escalated (${escalatedCount}) →`}</span>
+                  </button>
+                </div>
+              )}
+            </>
             );
           })()}
 
@@ -2864,6 +2954,26 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                 availableDates={uniqueDates}
                 placeholder="Date Range"
               />
+
+              {/* Quick Escalation Filter Toggle Button */}
+              {influencers.filter(i => isCollaborationEscalated(i)).length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterEscalated(prev => !prev);
+                    setCurrentPage(1);
+                  }}
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 transition cursor-pointer select-none shadow-2xs ${
+                    filterEscalated
+                      ? 'bg-rose-600 text-white border-rose-700 ring-2 ring-rose-300'
+                      : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                  }`}
+                  title="Filter to show only escalated collaborations (Parcel Sent >7 days without video)"
+                >
+                  <AlertTriangle size={13} className={filterEscalated ? 'text-white' : 'text-rose-600'} />
+                  <span>Escalated ({influencers.filter(i => isCollaborationEscalated(i)).length})</span>
+                </button>
+              )}
             </div>
 
             <div className="flex items-center gap-3">
@@ -3060,9 +3170,17 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                       const orders = item.ordersGenerated !== undefined ? item.ordersGenerated : (item.ordersCount || 0);
                       const isBonusQualified = isPaid && orders >= 100;
                       const isSelected = selectedRecordIds.includes(item._id);
+                      const isEscalatedRow = isCollaborationEscalated(item);
+                      const daysCount = getDaysSinceParcel(item);
 
                       return (
-                        <tr key={item._id} className={`transition ${isSelected ? 'bg-purple-50/80 hover:bg-purple-100/70 border-l-4 border-l-purple-600' : 'hover:bg-slate-50'}`}>
+                        <tr key={item._id} className={`transition ${
+                          isSelected
+                            ? 'bg-purple-50/80 hover:bg-purple-100/70 border-l-4 border-l-purple-600'
+                            : isEscalatedRow
+                              ? 'bg-rose-50/40 hover:bg-rose-100/40 border-l-4 border-l-rose-500'
+                              : 'hover:bg-slate-50'
+                        }`}>
                           <td className="p-3 border-r border-slate-100 text-center w-11">
                             <div className="flex items-center justify-center">
                               <input
@@ -3263,11 +3381,17 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                                     📹 Ref Video Link
                                   </a>
                                 )}
-                                {item.contentLink && (
+                                {item.contentLink ? (
                                   <a href={item.contentLink} target="_blank" rel="noreferrer" className="block text-[10px] text-purple-600 font-bold hover:underline truncate max-w-[120px]">
                                     🔗 Content Link
                                   </a>
-                                )}
+                                ) : isEscalatedRow ? (
+                                  <div className="mt-1">
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-300 font-extrabold text-[9px]">
+                                      <AlertTriangle size={9} className="text-rose-600" /> Video Pending (Day {daysCount})
+                                    </span>
+                                  </div>
+                                ) : null}
                               </td>
 
                               <td className="p-3 border-r border-slate-100 text-right font-bold text-slate-700">
@@ -3289,6 +3413,15 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                               userRole={userRole}
                               onSelect={(newStat) => handleStatusChange(item._id, newStat)}
                             />
+                            {isEscalatedRow && (
+                              <div
+                                className="mt-1 flex items-center justify-center gap-1 px-2 py-0.5 rounded-lg bg-rose-600 text-white font-black text-[9px] uppercase tracking-wider animate-pulse shadow-xs"
+                                title={`Parcel dispatched on ${item.parcelSentAt ? new Date(item.parcelSentAt).toLocaleDateString() : 'N/A'}. Day ${daysCount} without video submission.`}
+                              >
+                                <AlertTriangle size={10} className="shrink-0" />
+                                <span>Day {daysCount} Overdue</span>
+                              </div>
+                            )}
                             {item.approvalStatus === 'Not Approved' && (
                               <div className="mt-1">
                                 <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase border bg-rose-100 text-rose-800 border-rose-300">
@@ -3317,9 +3450,18 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                                 statusColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
                                 rawDate = completedTimestamp;
                               } else if (item.status === 'Parcel Sent') {
-                                statusLabel = 'Dispatched';
-                                statusColor = 'text-indigo-700 bg-indigo-50 border-indigo-200';
+                                if (isEscalatedRow) {
+                                  statusLabel = `Escalated (Day ${daysCount})`;
+                                  statusColor = 'text-rose-700 bg-rose-50 border-rose-300 font-black';
+                                } else {
+                                  statusLabel = daysCount > 1 ? `Dispatched (Day ${daysCount}/7)` : 'Dispatched';
+                                  statusColor = 'text-indigo-700 bg-indigo-50 border-indigo-200';
+                                }
                                 rawDate = item.parcelSentAt || item.statusUpdatedAt || item.updatedAt;
+                              } else if (item.status === 'Product Returned') {
+                                statusLabel = 'Returned';
+                                statusColor = 'text-rose-700 bg-rose-50 border-rose-200';
+                                rawDate = item.productReturnedAt || item.statusUpdatedAt || item.updatedAt;
                               } else if (item.status === 'Under Review') {
                                 statusLabel = 'Under Review';
                                 statusColor = 'text-amber-700 bg-amber-50 border-amber-200';
@@ -3717,6 +3859,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                   <option value="Approved">🟢 Approved</option>
                   <option value="Completed">🟢 Completed</option>
                   <option value="Settled">🟣 Settled</option>
+                  <option value="Product Returned">↩️ Product Returned</option>
                 </select>
               </div>
 

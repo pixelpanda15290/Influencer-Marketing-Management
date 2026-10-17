@@ -311,8 +311,31 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
       if (!item.inDiscussionAt && item.status === 'In Discussion') {
         item.inDiscussionAt = item.updatedAt || item.createdAt;
       }
+      if (!item.productReturnedAt && item.status === 'Product Returned') {
+        item.productReturnedAt = item.updatedAt || item.createdAt;
+      }
+
+      // Compute Escalation for Parcel Sent > 7 days (starts on 8th day) without video
+      const sentDate = item.parcelSentAt || (item.status === 'Parcel Sent' ? (item.statusUpdatedAt || item.orderDate || item.updatedAt) : null);
+      if (item.status === 'Parcel Sent' && sentDate && !item.contentLink) {
+        const d = new Date(sentDate);
+        if (!isNaN(d.getTime())) {
+          const diffDays = Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+          item.daysSinceParcelSent = Math.max(0, diffDays) + 1; // Day 1, Day 2...
+          item.isEscalated = item.daysSinceParcelSent >= 8;
+        } else {
+          item.isEscalated = false;
+          item.daysSinceParcelSent = 0;
+        }
+      } else {
+        item.isEscalated = false;
+        item.daysSinceParcelSent = 0;
+      }
+
       return item;
     });
+
+    const escalatedCount = influencers.filter((i: any) => i.isEscalated).length;
 
     return res.status(200).json({
       success: true,
@@ -321,7 +344,8 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
         totalIn,
         totalOut,
         netBalance,
-        totalCount
+        totalCount,
+        escalatedCount
       },
       tabCounts: {
         paid: paidCount,
@@ -391,6 +415,7 @@ router.post('/', authenticateToken, checkPermission('influencer.create'), async 
     let parcelSentAtVal: Date | undefined = undefined;
     let underReviewAtVal: Date | undefined = undefined;
     let inDiscussionAtVal: Date | undefined = undefined;
+    let productReturnedAtVal: Date | undefined = undefined;
     if (targetStatus === 'Completed' || targetStatus === 'Approved' || targetStatus === 'Settled') {
       if (!completedAtVal) completedAtVal = now;
     } else if (targetStatus === 'Parcel Sent') {
@@ -399,6 +424,8 @@ router.post('/', authenticateToken, checkPermission('influencer.create'), async 
       underReviewAtVal = now;
     } else if (targetStatus === 'In Discussion') {
       inDiscussionAtVal = now;
+    } else if (targetStatus === 'Product Returned') {
+      productReturnedAtVal = now;
     }
 
     const newRecord = await Influencer.create({
@@ -439,6 +466,7 @@ router.post('/', authenticateToken, checkPermission('influencer.create'), async 
       parcelSentAt: parcelSentAtVal,
       underReviewAt: underReviewAtVal,
       inDiscussionAt: inDiscussionAtVal,
+      productReturnedAt: productReturnedAtVal,
       statusUpdatedAt: now,
       contentLink: contentLink || '',
       adsCode: adsCode || '',
@@ -571,6 +599,10 @@ router.put('/:id', authenticateToken, checkPermission('influencer.update'), asyn
           record.approvalStatus = 'Pending';
         } else if (status === 'In Discussion') {
           if (!record.inDiscussionAt) record.inDiscussionAt = now;
+        } else if (status === 'Product Returned') {
+          if (!record.productReturnedAt) record.productReturnedAt = now;
+          record.isApproved = false;
+          record.approvalStatus = 'Pending';
         } else if (status === 'Pending') {
           record.isApproved = false;
           record.approvalStatus = 'Pending';
@@ -579,7 +611,7 @@ router.put('/:id', authenticateToken, checkPermission('influencer.update'), asyn
         if (status === 'Completed' || status === 'Approved' || status === 'Settled') {
           record.isApproved = true;
           record.approvalStatus = 'Approved';
-        } else if (status === 'Under Review' || status === 'Pending') {
+        } else if (status === 'Under Review' || status === 'Pending' || status === 'Product Returned') {
           record.isApproved = false;
           record.approvalStatus = 'Pending';
         }

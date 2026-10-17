@@ -349,7 +349,7 @@ export interface InfluencerTransaction {
   orderId?: string;
   orderDate?: string;
   platform: string;
-  status: 'Pending' | 'In Discussion' | 'Parcel Sent' | 'Under Review' | 'Completed' | 'Settled' | 'Approved';
+  status: 'Pending' | 'In Discussion' | 'Parcel Sent' | 'Under Review' | 'Completed' | 'Settled' | 'Approved' | 'Product Returned';
   contentLink?: string;
   adsCode?: string;
   viewsCount?: number;
@@ -367,7 +367,10 @@ export interface InfluencerTransaction {
   parcelSentAt?: string;
   underReviewAt?: string;
   inDiscussionAt?: string;
+  productReturnedAt?: string;
   statusUpdatedAt?: string;
+  isEscalated?: boolean;
+  daysSinceParcelSent?: number;
   createdBy?: any;
   createdAt?: string;
   updatedAt?: string;

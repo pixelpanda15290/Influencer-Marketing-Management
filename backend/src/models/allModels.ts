@@ -429,7 +429,7 @@ export interface IInfluencer extends Document {
   orderId?: string;
   orderDate?: Date;
   platform: string;
-  status: 'Pending' | 'In Discussion' | 'Parcel Sent' | 'Under Review' | 'Completed' | 'Settled' | 'Approved';
+  status: 'Pending' | 'In Discussion' | 'Parcel Sent' | 'Under Review' | 'Completed' | 'Settled' | 'Approved' | 'Product Returned';
   contentLink?: string;
   adsCode?: string;
   viewsCount?: number;
@@ -445,6 +445,7 @@ export interface IInfluencer extends Document {
   parcelSentAt?: Date;
   underReviewAt?: Date;
   inDiscussionAt?: Date;
+  productReturnedAt?: Date;
   statusUpdatedAt?: Date;
   moneyReceivedBy?: string;
   paymentDoneBy?: string;
@@ -492,7 +493,7 @@ const InfluencerSchema = new Schema<IInfluencer>({
   orderId: { type: String, default: '' },
   orderDate: { type: Date },
   platform: { type: String, default: 'Instagram' },
-  status: { type: String, enum: ['Pending', 'In Discussion', 'Parcel Sent', 'Under Review', 'Completed', 'Settled', 'Approved'], default: 'Pending' },
+  status: { type: String, enum: ['Pending', 'In Discussion', 'Parcel Sent', 'Under Review', 'Completed', 'Settled', 'Approved', 'Product Returned'], default: 'Pending' },
   contentLink: { type: String, default: '' },
   adsCode: { type: String, default: '' },
   viewsCount: { type: Number, default: 0 },
@@ -508,6 +509,7 @@ const InfluencerSchema = new Schema<IInfluencer>({
   parcelSentAt: { type: Date },
   underReviewAt: { type: Date },
   inDiscussionAt: { type: Date },
+  productReturnedAt: { type: Date },
   statusUpdatedAt: { type: Date },
   sheetRowIndex: { type: Number },
   googleSheetId: { type: String, default: '' },

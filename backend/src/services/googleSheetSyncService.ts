@@ -192,11 +192,12 @@ export async function processBarterRows(rows: Record<string, string>[], currentS
 
     // Map status
     const statusRaw = getCol('STATUS', 'Status') || '';
-    let finalStatus: 'Pending' | 'In Discussion' | 'Parcel Sent' | 'Under Review' | 'Completed' | 'Settled' | 'Approved' = 'Pending';
+    let finalStatus: 'Pending' | 'In Discussion' | 'Parcel Sent' | 'Under Review' | 'Completed' | 'Settled' | 'Approved' | 'Product Returned' = 'Pending';
     const lowerStat = statusRaw.toLowerCase();
     if (lowerStat.includes('completed') || lowerStat.includes('done')) finalStatus = 'Completed';
     else if (lowerStat.includes('approved')) finalStatus = 'Approved';
     else if (lowerStat.includes('settle')) finalStatus = 'Settled';
+    else if (lowerStat.includes('return')) finalStatus = 'Product Returned';
     else if (lowerStat.includes('review')) finalStatus = 'Under Review';
     else if (lowerStat.includes('parcel') || lowerStat.includes('sent') || lowerStat.includes('dispatch')) finalStatus = 'Parcel Sent';
     else if (lowerStat.includes('discuss') || lowerStat.includes('talk') || lowerStat.includes('connect')) finalStatus = 'In Discussion';
