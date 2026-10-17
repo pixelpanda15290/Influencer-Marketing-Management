@@ -105,7 +105,7 @@ const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // GET /api/v1/influencers
 router.get('/', authenticateToken, checkPermission('influencer.view'), async (req: AuthRequest, res: Response) => {
   try {
-    const { category, timeframe, year, month, search, brand, manager, status, deliverable } = req.query;
+    const { category, timeframe, year, month, search, brand, manager, status, deliverable, date, startDate, endDate } = req.query;
     const filter: any = { isDeleted: { $ne: true } };
 
     // 0. Employee Role Scoping (Only show data where employee is the assigned manager/executive)
@@ -130,7 +130,7 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
       filter.category = category;
     }
 
-    // 2. Timeframe Filter (Today, Monthly, Yearly) — Matches transactionDate OR connectedDate/createdAt if transactionDate is blank
+    // 2. Date Range / Timeframe Filter — Matches transactionDate OR connectedDate/createdAt if transactionDate is blank
     const now = new Date();
     const currentYear = Number(year) || now.getFullYear();
     const currentMonth = month !== undefined ? Number(month) - 1 : now.getMonth();
@@ -157,7 +157,27 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
       ]
     });
 
-    if (timeframe && (timeframe as string).includes('_')) {
+    // 2a. Priority 1: Explicit Date Range (startDate & endDate)
+    if (startDate && typeof startDate === 'string' && startDate.trim()) {
+      const parsedStart = new Date(startDate);
+      const endCandidate = (endDate && typeof endDate === 'string' && endDate.trim()) ? endDate : startDate;
+      const parsedEnd = new Date(endCandidate);
+      if (!isNaN(parsedStart.getTime()) && !isNaN(parsedEnd.getTime())) {
+        const startOfDay = new Date(parsedStart.getFullYear(), parsedStart.getMonth(), parsedStart.getDate(), 0, 0, 0);
+        const endOfDay = new Date(parsedEnd.getFullYear(), parsedEnd.getMonth(), parsedEnd.getDate(), 23, 59, 59);
+        filter.$and = filter.$and || [];
+        filter.$and.push(getDateQuery(startOfDay, endOfDay));
+      }
+    } else if (date && typeof date === 'string' && date.trim()) {
+      // 2b. Exact Single Date
+      const parsedDate = new Date(date);
+      if (!isNaN(parsedDate.getTime())) {
+        const startOfDay = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate(), 0, 0, 0);
+        const endOfDay = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate(), 23, 59, 59);
+        filter.$and = filter.$and || [];
+        filter.$and.push(getDateQuery(startOfDay, endOfDay));
+      }
+    } else if (timeframe && (timeframe as string).includes('_')) {
       const parts = (timeframe as string).split('_');
       const monthNames: Record<string, number> = {
         january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
@@ -272,7 +292,27 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
       query = query.skip((pageNum - 1) * limitNum).limit(limitNum);
     }
 
-    const influencers = await query;
+    const rawInfluencers = await query;
+    const influencers = rawInfluencers.map((doc: any) => {
+      const item = doc.toObject ? doc.toObject() : { ...doc };
+      // Fallback for previous records: If completedAt is missing and status is Completed/Approved/Settled, use updatedAt
+      if (!item.completedAt && (item.status === 'Completed' || item.status === 'Approved' || item.status === 'Settled')) {
+        item.completedAt = item.updatedAt || item.createdAt;
+      }
+      if (!item.statusUpdatedAt) {
+        item.statusUpdatedAt = item.updatedAt || item.createdAt;
+      }
+      if (!item.parcelSentAt && item.status === 'Parcel Sent') {
+        item.parcelSentAt = item.updatedAt || item.createdAt;
+      }
+      if (!item.underReviewAt && item.status === 'Under Review') {
+        item.underReviewAt = item.updatedAt || item.createdAt;
+      }
+      if (!item.inDiscussionAt && item.status === 'In Discussion') {
+        item.inDiscussionAt = item.updatedAt || item.createdAt;
+      }
+      return item;
+    });
 
     return res.status(200).json({
       success: true,
@@ -346,6 +386,21 @@ router.post('/', authenticateToken, checkPermission('influencer.create'), async 
     const finalRefLink = refVideoLink || referenceVideoLink || '';
     const finalInstaId = influencerInstagramId || profileLink || '';
 
+    const now = new Date();
+    let completedAtVal: Date | undefined = req.body.completedAt ? new Date(req.body.completedAt) : undefined;
+    let parcelSentAtVal: Date | undefined = undefined;
+    let underReviewAtVal: Date | undefined = undefined;
+    let inDiscussionAtVal: Date | undefined = undefined;
+    if (targetStatus === 'Completed' || targetStatus === 'Approved' || targetStatus === 'Settled') {
+      if (!completedAtVal) completedAtVal = now;
+    } else if (targetStatus === 'Parcel Sent') {
+      parcelSentAtVal = now;
+    } else if (targetStatus === 'Under Review') {
+      underReviewAtVal = now;
+    } else if (targetStatus === 'In Discussion') {
+      inDiscussionAtVal = now;
+    }
+
     const newRecord = await Influencer.create({
       sNo: count + 1,
       transactionDate: transactionDate ? new Date(transactionDate) : undefined,
@@ -380,6 +435,11 @@ router.post('/', authenticateToken, checkPermission('influencer.create'), async 
       orderDate: orderDate ? new Date(orderDate) : undefined,
       platform: platform || 'Instagram',
       status: targetStatus,
+      completedAt: completedAtVal,
+      parcelSentAt: parcelSentAtVal,
+      underReviewAt: underReviewAtVal,
+      inDiscussionAt: inDiscussionAtVal,
+      statusUpdatedAt: now,
       contentLink: contentLink || '',
       adsCode: adsCode || '',
       viewsCount: Number(viewsCount) || 0,
@@ -494,14 +554,39 @@ router.put('/:id', authenticateToken, checkPermission('influencer.update'), asyn
     if (orderDate !== undefined) record.orderDate = orderDate ? new Date(orderDate) : undefined;
     if (platform) record.platform = platform;
     if (status) {
+      const isStatusChanged = oldStatus !== status;
       record.status = status;
-      if (status === 'Completed' || status === 'Approved' || status === 'Settled') {
-        record.isApproved = true;
-        record.approvalStatus = 'Approved';
-      } else if (status === 'Under Review' || status === 'Pending') {
-        record.isApproved = false;
-        record.approvalStatus = 'Pending';
+      if (isStatusChanged) {
+        const now = new Date();
+        record.statusUpdatedAt = now;
+        if (status === 'Completed' || status === 'Approved' || status === 'Settled') {
+          record.isApproved = true;
+          record.approvalStatus = 'Approved';
+          if (!record.completedAt) record.completedAt = now;
+        } else if (status === 'Parcel Sent') {
+          if (!record.parcelSentAt) record.parcelSentAt = now;
+        } else if (status === 'Under Review') {
+          if (!record.underReviewAt) record.underReviewAt = now;
+          record.isApproved = false;
+          record.approvalStatus = 'Pending';
+        } else if (status === 'In Discussion') {
+          if (!record.inDiscussionAt) record.inDiscussionAt = now;
+        } else if (status === 'Pending') {
+          record.isApproved = false;
+          record.approvalStatus = 'Pending';
+        }
+      } else {
+        if (status === 'Completed' || status === 'Approved' || status === 'Settled') {
+          record.isApproved = true;
+          record.approvalStatus = 'Approved';
+        } else if (status === 'Under Review' || status === 'Pending') {
+          record.isApproved = false;
+          record.approvalStatus = 'Pending';
+        }
       }
+    }
+    if (req.body.completedAt !== undefined) {
+      record.completedAt = req.body.completedAt ? new Date(req.body.completedAt) : undefined;
     }
     if (contentLink !== undefined) record.contentLink = contentLink;
     if (adsCode !== undefined) record.adsCode = adsCode;

@@ -280,6 +280,9 @@ export async function processBarterRows(rows: Record<string, string>[], currentS
       if (finalStatus === 'Completed' || finalStatus === 'Approved') {
         existing.status = finalStatus;
         existing.isApproved = true;
+        if (!existing.completedAt) {
+          existing.completedAt = existing.updatedAt || new Date();
+        }
       } else if (!existing.status || existing.status === 'Pending') {
         if (finalStatus && finalStatus !== 'Pending') {
           existing.status = finalStatus;
@@ -330,6 +333,11 @@ export async function processBarterRows(rows: Record<string, string>[], currentS
         orderId,
         orderDate: orderId && parsedRowDate ? parsedRowDate : undefined,
         status: finalStatus,
+        completedAt: (finalStatus === 'Completed' || finalStatus === 'Approved') ? new Date() : undefined,
+        parcelSentAt: finalStatus === 'Parcel Sent' ? new Date() : undefined,
+        underReviewAt: finalStatus === 'Under Review' ? new Date() : undefined,
+        inDiscussionAt: finalStatus === 'In Discussion' ? new Date() : undefined,
+        statusUpdatedAt: new Date(),
         contentLink,
         adsCode,
         approvalStatus,

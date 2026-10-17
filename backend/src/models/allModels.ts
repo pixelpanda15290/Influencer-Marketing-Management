@@ -441,6 +441,11 @@ export interface IInfluencer extends Document {
   reason?: string;
   notes?: string;
   remark?: string;
+  completedAt?: Date;
+  parcelSentAt?: Date;
+  underReviewAt?: Date;
+  inDiscussionAt?: Date;
+  statusUpdatedAt?: Date;
   moneyReceivedBy?: string;
   paymentDoneBy?: string;
   sheetRowIndex?: number;
@@ -499,6 +504,11 @@ const InfluencerSchema = new Schema<IInfluencer>({
   reason: { type: String, default: '' },
   notes: { type: String, default: '' },
   remark: { type: String, default: '' },
+  completedAt: { type: Date },
+  parcelSentAt: { type: Date },
+  underReviewAt: { type: Date },
+  inDiscussionAt: { type: Date },
+  statusUpdatedAt: { type: Date },
   sheetRowIndex: { type: Number },
   googleSheetId: { type: String, default: '' },
   createdBy: { type: Schema.Types.ObjectId, ref: 'User' },

@@ -15,6 +15,7 @@ import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { Pagination } from '../components/Pagination';
 import { InlineLoader } from '../components/PageLoader';
 import { MonthDatePicker } from '../components/MonthDatePicker';
+import { DayCalendarPicker } from '../components/DayCalendarPicker';
 
 interface InfluencerManagementViewProps {
   userRole?: string;
@@ -417,11 +418,30 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
   const [sortKey, setSortKey] = useState<string>('transactionDate');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
-  // Multi-Filter Dropdown State (Brand, Manager, Status, Deliverable)
+  // Multi-Filter Dropdown State (Brand, Manager, Status, Deliverable, Date Range)
   const [filterBrand, setFilterBrand] = useState<string>('');
   const [filterManager, setFilterManager] = useState<string>('');
   const [filterStatus, setFilterStatus] = useState<string>('');
   const [filterDeliverable, setFilterDeliverable] = useState<string>('');
+  const [filterStartDate, setFilterStartDate] = useState<string>('');
+  const [filterEndDate, setFilterEndDate] = useState<string>('');
+  const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
+  const datePopoverRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (datePopoverRef.current && !datePopoverRef.current.contains(event.target as Node)) {
+        setIsDatePopoverOpen(false);
+      }
+    };
+    if (isDatePopoverOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isDatePopoverOpen]);
+
   const [dbFilterOptions, setDbFilterOptions] = useState<{
     brands?: string[];
     managers?: string[];
@@ -876,6 +896,8 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
       const month = currentDate.getMonth() + 1;
 
       let url = `/influencers?timeframe=${timeframe}&year=${year}&month=${month}&page=all&limit=all`;
+      if (filterStartDate) url += `&startDate=${filterStartDate}`;
+      if (filterEndDate) url += `&endDate=${filterEndDate}`;
       if (viewMode === 'Paid Collaborations') url += '&category=Paid';
       if (viewMode === 'Barter Collaborations') url += '&category=Barter';
 
@@ -966,7 +988,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
     } else {
       fetchInfluencers();
     }
-  }, [activeCategory, timeframe, currentDate, viewMode, selectedPayLogType, logFilterUser, logFilterRole, logFilterModule, logFilterAction, logSearchTerm]);
+  }, [activeCategory, timeframe, currentDate, viewMode, filterStartDate, filterEndDate, selectedPayLogType, logFilterUser, logFilterRole, logFilterModule, logFilterAction, logSearchTerm]);
 
   // Target Action Handlers
   const handleOpenCreateTargetModal = (defaultType: 'Paid' | 'Barter' = 'Paid') => {
@@ -1494,7 +1516,21 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
 
   // Inline table update handlers
   const handleStatusChange = async (id: string, newStatus: string) => {
-    setInfluencers(prev => prev.map(i => i._id === id ? { ...i, status: newStatus as any } : i));
+    const nowStr = new Date().toISOString();
+    setInfluencers(prev => prev.map(i => {
+      if (i._id !== id) return i;
+      const updated: any = { ...i, status: newStatus as any, statusUpdatedAt: nowStr };
+      if (newStatus === 'Completed' || newStatus === 'Approved' || newStatus === 'Settled') {
+        if (!updated.completedAt) updated.completedAt = nowStr;
+      } else if (newStatus === 'Parcel Sent') {
+        if (!updated.parcelSentAt) updated.parcelSentAt = nowStr;
+      } else if (newStatus === 'Under Review') {
+        if (!updated.underReviewAt) updated.underReviewAt = nowStr;
+      } else if (newStatus === 'In Discussion') {
+        if (!updated.inDiscussionAt) updated.inDiscussionAt = nowStr;
+      }
+      return updated;
+    }));
     try {
       await api.put(`/influencers/${id}`, { status: newStatus });
     } catch (err) {
@@ -1551,13 +1587,31 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
           .filter((x): x is string => Boolean(x))
       )).sort();
 
-  const hasActiveFilters = !!(filterBrand || filterManager || filterStatus || filterDeliverable || searchTerm);
+  const uniqueDates: string[] = Array.from(new Set(
+    influencers
+      .filter(i => viewMode === 'All Collaborations' || i.category === (viewMode === 'Barter Collaborations' ? 'Barter' : 'Paid'))
+      .map(i => {
+        const d = i.connectedDate || i.transactionDate || i.orderDate || i.createdAt;
+        if (!d) return '';
+        const dt = new Date(d);
+        if (isNaN(dt.getTime())) return '';
+        const y = dt.getFullYear();
+        const m = String(dt.getMonth() + 1).padStart(2, '0');
+        const day = String(dt.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      })
+      .filter((x): x is string => Boolean(x))
+  )).sort();
+
+  const hasActiveFilters = !!(filterBrand || filterManager || filterStatus || filterDeliverable || filterStartDate || filterEndDate || searchTerm);
 
   const resetAllFilters = () => {
     setFilterBrand('');
     setFilterManager('');
     setFilterStatus('');
     setFilterDeliverable('');
+    setFilterStartDate('');
+    setFilterEndDate('');
     setSearchTerm('');
   };
 
@@ -1565,6 +1619,27 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
   const filteredInfluencers = influencers.filter(i => {
     if (viewMode === 'Paid Collaborations' && i.category !== 'Paid') return false;
     if (viewMode === 'Barter Collaborations' && i.category !== 'Barter') return false;
+
+    // Filter by Date Range (Start Date & End Date)
+    if (filterStartDate || filterEndDate) {
+      const rawDate = i.connectedDate || i.transactionDate || i.orderDate || i.createdAt;
+      if (!rawDate) return false;
+      const dObj = new Date(rawDate);
+      if (isNaN(dObj.getTime())) return false;
+      
+      const y = dObj.getFullYear();
+      const m = String(dObj.getMonth() + 1).padStart(2, '0');
+      const d = String(dObj.getDate()).padStart(2, '0');
+      const itemIso = `${y}-${m}-${d}`;
+
+      if (filterStartDate && filterEndDate) {
+        if (itemIso < filterStartDate || itemIso > filterEndDate) return false;
+      } else if (filterStartDate) {
+        if (itemIso < filterStartDate) return false;
+      } else if (filterEndDate) {
+        if (itemIso > filterEndDate) return false;
+      }
+    }
 
     // Filter by Brand
     if (filterBrand && (i.brandName || '').trim().toLowerCase() !== filterBrand.toLowerCase()) {
@@ -1621,6 +1696,16 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
     } else if (sortKey === 'transactionDate') {
       valA = a.connectedDate ? new Date(a.connectedDate).getTime() : (a.transactionDate ? new Date(a.transactionDate).getTime() : 0);
       valB = b.connectedDate ? new Date(b.connectedDate).getTime() : (b.transactionDate ? new Date(b.transactionDate).getTime() : 0);
+    } else if (sortKey === 'completedAt') {
+      const getTiming = (item: any) => {
+        if (item.completedAt) return new Date(item.completedAt).getTime();
+        if (item.status === 'Completed' || item.status === 'Approved' || item.status === 'Settled') {
+          return item.updatedAt ? new Date(item.updatedAt).getTime() : 0;
+        }
+        return item.statusUpdatedAt ? new Date(item.statusUpdatedAt).getTime() : (item.updatedAt ? new Date(item.updatedAt).getTime() : 0);
+      };
+      valA = getTiming(a);
+      valB = getTiming(b);
     }
 
     if (valA < valB) return sortDir === 'asc' ? -1 : 1;
@@ -2766,6 +2851,19 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                   options={uniqueDeliverables.map(d => ({ label: d, value: d }))}
                 />
               )}
+
+              {/* Visual Day Calendar Range Filter */}
+              <DayCalendarPicker
+                startDate={filterStartDate}
+                endDate={filterEndDate}
+                onChange={(start, end) => {
+                  setFilterStartDate(start);
+                  setFilterEndDate(end);
+                  setCurrentPage(1);
+                }}
+                availableDates={uniqueDates}
+                placeholder="Date Range"
+              />
             </div>
 
             <div className="flex items-center gap-3">
@@ -2908,6 +3006,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                       </div>
                     </th>
                     <SortHeader field="sNo" label="#" align="center" />
+
                     <SortHeader field="transactionDate" label="Date" />
                     <SortHeader field="influencerManager" label="Assignee" />
                     <SortHeader field="brandName" label="Brand" />
@@ -2936,6 +3035,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                     )}
 
                     <SortHeader field="status" label="Status" align="center" />
+                    <SortHeader field="completedAt" label="Completed At / Status Time" align="center" />
                     <th className="p-3 border-b border-slate-700 text-center">Actions</th>
                   </tr>
                 </thead>
@@ -3201,6 +3301,62 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                                 {item.reason}
                               </div>
                             )}
+                          </td>
+
+                          <td className="p-3 border-r border-slate-100 text-center whitespace-nowrap">
+                            {(() => {
+                              const isCompletedStatus = item.status === 'Completed' || item.status === 'Approved' || item.status === 'Settled';
+                              const completedTimestamp = item.completedAt || (isCompletedStatus ? item.updatedAt : undefined);
+
+                              let statusLabel = 'Updated';
+                              let statusColor = 'text-slate-600 bg-slate-50 border-slate-200';
+                              let rawDate: string | undefined = undefined;
+
+                              if (isCompletedStatus) {
+                                statusLabel = 'Completed';
+                                statusColor = 'text-emerald-700 bg-emerald-50 border-emerald-200';
+                                rawDate = completedTimestamp;
+                              } else if (item.status === 'Parcel Sent') {
+                                statusLabel = 'Dispatched';
+                                statusColor = 'text-indigo-700 bg-indigo-50 border-indigo-200';
+                                rawDate = item.parcelSentAt || item.statusUpdatedAt || item.updatedAt;
+                              } else if (item.status === 'Under Review') {
+                                statusLabel = 'Under Review';
+                                statusColor = 'text-amber-700 bg-amber-50 border-amber-200';
+                                rawDate = item.underReviewAt || item.statusUpdatedAt || item.updatedAt;
+                              } else if (item.status === 'In Discussion') {
+                                statusLabel = 'Discussion';
+                                statusColor = 'text-cyan-700 bg-cyan-50 border-cyan-200';
+                                rawDate = item.inDiscussionAt || item.statusUpdatedAt || item.updatedAt;
+                              } else {
+                                statusLabel = 'Pending';
+                                statusColor = 'text-orange-700 bg-orange-50 border-orange-200';
+                                rawDate = item.statusUpdatedAt || item.createdAt || item.updatedAt;
+                              }
+
+                              if (!rawDate) {
+                                return <span className="text-slate-400 font-semibold text-[11px]">—</span>;
+                              }
+
+                              const d = new Date(rawDate);
+                              const dateFormatted = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                              const timeFormatted = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+
+                              return (
+                                <div className="flex flex-col items-center justify-center gap-0.5">
+                                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-black border uppercase tracking-wider ${statusColor}`}>
+                                    {statusLabel}
+                                  </span>
+                                  <div className="font-bold text-slate-800 text-[11px]">{dateFormatted}</div>
+                                  <div className="text-[10px] text-slate-400 font-semibold">{timeFormatted}</div>
+                                  {!isCompletedStatus && completedTimestamp && (
+                                    <div className="text-[9px] text-emerald-600 font-bold mt-0.5" title="Previously Completed">
+                                      Done: {new Date(completedTimestamp).toLocaleDateString()}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </td>
 
                           <td className="p-3 text-center space-x-1 whitespace-nowrap">
@@ -4492,16 +4648,26 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className={`px-3 py-1 rounded-full text-xs font-black uppercase border ${
                   selectedViewItem.status === 'Completed' || selectedViewItem.status === 'Approved' || selectedViewItem.status === 'Settled'
                     ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
                     : selectedViewItem.status === 'Pending' || selectedViewItem.status === 'Under Review'
                     ? 'bg-amber-100 text-amber-800 border-amber-300'
-                    : 'bg-rose-100 text-rose-800 border-rose-300'
+                    : 'bg-indigo-100 text-indigo-800 border-indigo-300'
                 }`}>
                   {selectedViewItem.status || 'Pending'}
                 </span>
+                {(selectedViewItem.completedAt || ((selectedViewItem.status === 'Completed' || selectedViewItem.status === 'Approved' || selectedViewItem.status === 'Settled') && selectedViewItem.updatedAt)) && (
+                  <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                    🏁 Completed At: {new Date(selectedViewItem.completedAt || selectedViewItem.updatedAt!).toLocaleString()}
+                  </span>
+                )}
+                {selectedViewItem.statusUpdatedAt && (
+                  <span className="text-[11px] text-slate-500 font-medium">
+                    (Status set: {new Date(selectedViewItem.statusUpdatedAt).toLocaleDateString()} {new Date(selectedViewItem.statusUpdatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                  </span>
+                )}
               </div>
             </div>
 

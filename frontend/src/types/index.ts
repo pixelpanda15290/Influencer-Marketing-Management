@@ -363,6 +363,11 @@ export interface InfluencerTransaction {
   remark?: string;
   moneyReceivedBy?: string;
   paymentDoneBy?: string;
+  completedAt?: string;
+  parcelSentAt?: string;
+  underReviewAt?: string;
+  inDiscussionAt?: string;
+  statusUpdatedAt?: string;
   createdBy?: any;
   createdAt?: string;
   updatedAt?: string;
