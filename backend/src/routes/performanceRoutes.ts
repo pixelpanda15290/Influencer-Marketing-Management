@@ -85,7 +85,10 @@ router.get('/', authenticateToken, checkPermission('performance.view'), async (r
         const exec = (d.assignedExecutive || '').trim().toLowerCase();
         const createdByStr = (d.createdBy || '').toString();
 
-        if (createdByStr === empIdStr || mgr.includes(empNameLower) || exec.includes(empNameLower)) {
+        const isMouli = empNameLower.includes('mouli') || empNameLower.includes('maouli');
+        const mouliMatch = isMouli && (/mouli|maouli/i.test(mgr) || /mouli|maouli/i.test(exec));
+
+        if (createdByStr === empIdStr || mouliMatch || mgr.includes(empNameLower) || exec.includes(empNameLower)) {
           return true;
         }
 

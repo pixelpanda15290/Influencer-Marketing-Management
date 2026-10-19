@@ -1,4 +1,5 @@
 import { Influencer, Brand, Target, GoogleSheetConfig, User, Employee } from '../models/allModels';
+import { getCanonicalManagerName } from '../routes/influencerRoutes';
 import axios from 'axios';
 import { google } from 'googleapis';
 import dns from 'dns';
@@ -152,17 +153,21 @@ export async function processBarterRows(rows: Record<string, string>[], currentS
     const candidateNames = [rawAssignee, rawManager, rawTeam].filter(Boolean);
     for (const cand of candidateNames) {
       const cleanCand = cand.trim().toLowerCase();
+      if (cleanCand === 'mouli' || cleanCand === 'maouli' || cleanCand === 'mouli pandey' || cleanCand === 'maouli pandey') {
+        matchedMemberName = 'Mouli Pandey';
+        break;
+      }
       const match = validMemberNames.find(m => {
         const lowM = m.toLowerCase();
         return lowM === cleanCand || lowM.split(' ')[0] === cleanCand || cleanCand.split(' ')[0] === lowM;
       });
       if (match) {
-        matchedMemberName = match;
+        matchedMemberName = getCanonicalManagerName(match);
         break;
       }
     }
 
-    const managerName = matchedMemberName || '';
+    const managerName = matchedMemberName ? getCanonicalManagerName(matchedMemberName) : '';
     const brandManager = rawManager || rawTeam || '';
 
     const finalInfName = rawInfName || '';

@@ -59,6 +59,55 @@ export const isCollaborationEscalated = (item: any): boolean => {
   return getDaysSinceParcel(item) >= 8;
 };
 
+// Canonical employee manager name resolution (unifies 'Mouli', 'Maouli', 'Mouli Pandey', etc. into a single employee)
+export const getCanonicalManagerName = (name?: string): string => {
+  if (!name) return '';
+  const trimmed = name.trim();
+  const lower = trimmed.toLowerCase();
+  if (
+    lower === 'mouli' ||
+    lower === 'mouli pandey' ||
+    lower === 'maouli' ||
+    lower === 'maouli pandey'
+  ) {
+    return 'Mouli Pandey';
+  }
+  if (lower === 'harsh' || lower === 'harsh jonwal') {
+    return 'Harsh Jonwal';
+  }
+  if (lower === 'pp') {
+    return 'PP';
+  }
+  if (lower === 'yash') {
+    return 'Yash';
+  }
+  return trimmed;
+};
+
+export const matchesManager = (recordManager?: string, filterManager?: string): boolean => {
+  if (!filterManager) return true;
+  if (filterManager === '__UNASSIGNED__') {
+    return !recordManager || recordManager.trim().length === 0;
+  }
+  const r = getCanonicalManagerName(recordManager).toLowerCase();
+  const f = getCanonicalManagerName(filterManager).toLowerCase();
+  return r === f;
+};
+
+// Helper to extract ISO date string (YYYY-MM-DD) for completion / received date
+export const getCompletedDate = (item: any): string | null => {
+  const statusLower = (item?.status || '').toLowerCase().trim();
+  const isCompletedStatus = statusLower === 'completed' || statusLower === 'approved' || statusLower === 'settled';
+  const raw = item?.completedAt || item?.completedDate || item?.receivedDate || (isCompletedStatus ? (item?.updatedAt || item?.statusUpdatedAt) : null);
+  if (!raw) return null;
+  const d = new Date(raw);
+  if (isNaN(d.getTime())) return null;
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+};
+
 // Custom Premium Select Dropdown Component
 const CustomSelectDropdown: React.FC<{
   label: string;
@@ -449,6 +498,8 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
   const [filterDeliverable, setFilterDeliverable] = useState<string>('');
   const [filterStartDate, setFilterStartDate] = useState<string>('');
   const [filterEndDate, setFilterEndDate] = useState<string>('');
+  const [filterCompletedStartDate, setFilterCompletedStartDate] = useState<string>('');
+  const [filterCompletedEndDate, setFilterCompletedEndDate] = useState<string>('');
   const [filterEscalated, setFilterEscalated] = useState<boolean>(false);
   const [isDatePopoverOpen, setIsDatePopoverOpen] = useState(false);
   const datePopoverRef = React.useRef<HTMLDivElement>(null);
@@ -472,6 +523,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
     managers?: string[];
     statuses?: string[];
     deliverables?: string[];
+    completedDates?: string[];
   }>({});
   const [tabCounts, setTabCounts] = useState<{ paid: number; barter: number; all: number }>({
     paid: 0,
@@ -921,8 +973,8 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
       const month = currentDate.getMonth() + 1;
 
       let url = `/influencers?timeframe=${timeframe}&year=${year}&month=${month}&page=all&limit=all`;
-      if (filterStartDate) url += `&startDate=${filterStartDate}`;
-      if (filterEndDate) url += `&endDate=${filterEndDate}`;
+      if (filterCompletedStartDate) url += `&completedStartDate=${filterCompletedStartDate}`;
+      if (filterCompletedEndDate) url += `&completedEndDate=${filterCompletedEndDate}`;
       if (viewMode === 'Paid Collaborations') url += '&category=Paid';
       if (viewMode === 'Barter Collaborations') url += '&category=Barter';
 
@@ -1013,7 +1065,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
     } else {
       fetchInfluencers();
     }
-  }, [activeCategory, timeframe, currentDate, viewMode, filterStartDate, filterEndDate, selectedPayLogType, logFilterUser, logFilterRole, logFilterModule, logFilterAction, logSearchTerm]);
+  }, [activeCategory, timeframe, currentDate, viewMode, filterCompletedStartDate, filterCompletedEndDate, selectedPayLogType, logFilterUser, logFilterRole, logFilterModule, logFilterAction, logSearchTerm]);
 
   // Target Action Handlers
   const handleOpenCreateTargetModal = (defaultType: 'Paid' | 'Barter' = 'Paid') => {
@@ -1205,7 +1257,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
         : '';
 
       const payload = {
-        influencerManager,
+        influencerManager: getCanonicalManagerName(influencerManager),
         brandManagerTeam,
         influencerName: influencerName.trim(),
         influencerInstagramId: cleanHandle,
@@ -1584,16 +1636,16 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
   ])).sort();
 
   const uniqueManagers: string[] = Array.from(new Set([
-    ...employees.map(e => e.name?.trim()).filter((x): x is string => Boolean(x)),
-    ...(teamBreakdown?.members?.map(m => m.employee.name?.trim()) || []),
-    ...(dbFilterOptions.managers || []),
-    ...influencers.map(i => i.influencerManager?.trim()).filter((x): x is string => Boolean(x))
+    ...employees.map(e => getCanonicalManagerName(e.name)).filter(Boolean),
+    ...(teamBreakdown?.members?.map(m => getCanonicalManagerName(m.employee.name)) || []).filter(Boolean),
+    ...(dbFilterOptions.managers || []).map(m => getCanonicalManagerName(m)).filter(Boolean),
+    ...influencers.map(i => getCanonicalManagerName(i.influencerManager)).filter(Boolean)
   ])).sort();
 
   const panelMemberOptions: string[] = Array.from(new Set([
-    ...employees.map(e => e.name?.trim()).filter((x): x is string => Boolean(x)),
-    ...(teamBreakdown?.members?.map(m => m.employee.name?.trim()) || []),
-    ...(dbFilterOptions.managers || [])
+    ...employees.map(e => getCanonicalManagerName(e.name)).filter(Boolean),
+    ...(teamBreakdown?.members?.map(m => getCanonicalManagerName(m.employee.name)) || []).filter(Boolean),
+    ...(dbFilterOptions.managers || []).map(m => getCanonicalManagerName(m)).filter(Boolean)
   ])).filter(name => name.length > 0).sort();
 
   const ALL_STATUS_OPTIONS = [
@@ -1631,7 +1683,16 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
       .filter((x): x is string => Boolean(x))
   )).sort();
 
-  const hasActiveFilters = !!(filterBrand || filterManager || filterStatus || filterDeliverable || filterStartDate || filterEndDate || filterEscalated || searchTerm);
+  const uniqueCompletedDates: string[] = (dbFilterOptions.completedDates && dbFilterOptions.completedDates.length > 0)
+    ? dbFilterOptions.completedDates
+    : Array.from(new Set(
+        influencers
+          .filter(i => viewMode === 'All Collaborations' || i.category === (viewMode === 'Barter Collaborations' ? 'Barter' : 'Paid'))
+          .map(i => getCompletedDate(i))
+          .filter((x): x is string => Boolean(x))
+      )).sort();
+
+  const hasActiveFilters = !!(filterBrand || filterManager || filterStatus || filterDeliverable || filterStartDate || filterEndDate || filterCompletedStartDate || filterCompletedEndDate || filterEscalated || searchTerm);
 
   const resetAllFilters = () => {
     setFilterBrand('');
@@ -1640,6 +1701,8 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
     setFilterDeliverable('');
     setFilterStartDate('');
     setFilterEndDate('');
+    setFilterCompletedStartDate('');
+    setFilterCompletedEndDate('');
     setFilterEscalated(false);
     setSearchTerm('');
   };
@@ -1654,8 +1717,8 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
       return false;
     }
 
-    // Filter by Date Range (Start Date & End Date)
-    if (filterStartDate || filterEndDate) {
+    // Filter by Order / Deal Date Range (Start Date & End Date) — only if completed date filter is NOT active
+    if (!filterCompletedStartDate && !filterCompletedEndDate && (filterStartDate || filterEndDate)) {
       const rawDate = i.connectedDate || i.transactionDate || i.orderDate || i.createdAt;
       if (!rawDate) return false;
       const dObj = new Date(rawDate);
@@ -1675,6 +1738,19 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
       }
     }
 
+    // Filter by Completed / Received Date Range (Completed At Date)
+    if (filterCompletedStartDate || filterCompletedEndDate) {
+      const compDate = getCompletedDate(i);
+      if (!compDate) return false;
+      if (filterCompletedStartDate && filterCompletedEndDate) {
+        if (compDate < filterCompletedStartDate || compDate > filterCompletedEndDate) return false;
+      } else if (filterCompletedStartDate) {
+        if (compDate < filterCompletedStartDate) return false;
+      } else if (filterCompletedEndDate) {
+        if (compDate > filterCompletedEndDate) return false;
+      }
+    }
+
     // Filter by Brand
     if (filterBrand && (i.brandName || '').trim().toLowerCase() !== filterBrand.toLowerCase()) {
       return false;
@@ -1682,9 +1758,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
 
     // Filter by Manager / Assignee
     if (filterManager) {
-      if (filterManager === '__UNASSIGNED__') {
-        if (i.influencerManager && i.influencerManager.trim().length > 0) return false;
-      } else if ((i.influencerManager || '').trim().toLowerCase() !== filterManager.toLowerCase()) {
+      if (!matchesManager(i.influencerManager, filterManager)) {
         return false;
       }
     }
@@ -1711,7 +1785,9 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
       const term = searchTerm.toLowerCase();
       const matchInf = i.influencerName?.toLowerCase().includes(term);
       const matchBrand = i.brandName?.toLowerCase().includes(term);
-      const matchMgr = i.influencerManager?.toLowerCase().includes(term);
+      const matchMgr = (i.influencerManager || '').toLowerCase().includes(term) ||
+        getCanonicalManagerName(i.influencerManager).toLowerCase().includes(term) ||
+        ((term.includes('mouli') || term.includes('maouli')) && /mouli|maouli/i.test(i.influencerManager || ''));
       const matchPhone = i.phone?.toLowerCase().includes(term);
       const matchPlatform = i.platform?.toLowerCase().includes(term);
       const matchVideo = i.videoType?.toLowerCase().includes(term);
@@ -1752,6 +1828,38 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
   const allBarterCollabs = influencers.filter(i => i.category === 'Barter');
   const paidCollabs = influencers.filter(i => i.category === 'Paid' && isAchievedStatus(i.status));
   const barterCollabs = influencers.filter(i => i.category === 'Barter' && isAchievedStatus(i.status));
+
+  // Count of barter collaborations received / completed within active filtered date range
+  const barterReceivedOnCompletedDates = filteredInfluencers.filter(i => 
+    (i.category === 'Barter' || viewMode === 'Barter Collaborations') && 
+    (i.status === 'Completed' || i.status === 'Approved' || i.status === 'Settled')
+  ).length;
+
+  // Helper to format ISO date string for empty states and tooltips
+  const formatIsoDisplay = (iso?: string) => {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-').map(Number);
+    if (!y || !m || !d) return iso;
+    const dt = new Date(y, m - 1, d);
+    return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  };
+
+  // Deals initiated (connectedDate) within the active completed filter date range (helps provide suggestions when completed count is 0)
+  const dealsInitiatedInCompletedRange = influencers.filter(i => {
+    if (viewMode === 'Barter Collaborations' && i.category !== 'Barter') return false;
+    if (viewMode === 'Paid Collaborations' && i.category !== 'Paid') return false;
+    const rawDate = i.connectedDate || i.transactionDate || i.orderDate || i.createdAt;
+    if (!rawDate) return false;
+    const dObj = new Date(rawDate);
+    if (isNaN(dObj.getTime())) return false;
+    const iso = `${dObj.getFullYear()}-${String(dObj.getMonth() + 1).padStart(2, '0')}-${String(dObj.getDate()).padStart(2, '0')}`;
+    if (filterCompletedStartDate && filterCompletedEndDate) {
+      return iso >= filterCompletedStartDate && iso <= filterCompletedEndDate;
+    }
+    if (filterCompletedStartDate) return iso >= filterCompletedStartDate;
+    if (filterCompletedEndDate) return iso <= filterCompletedEndDate;
+    return false;
+  }).length;
 
   const totalBrandBilling = allPaidCollabs.reduce((acc, curr) => acc + (curr.brandOnboardingAmt || curr.inAmount || 0), 0);
   const totalInfluencerCost = allPaidCollabs.reduce((acc, curr) => acc + (curr.influencerOnboardingAmt || curr.outAmount || 0), 0);
@@ -2942,18 +3050,72 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                 />
               )}
 
-              {/* Visual Day Calendar Range Filter */}
+              {/* Visual Day Calendar Range Filter (Deal Date) */}
               <DayCalendarPicker
                 startDate={filterStartDate}
                 endDate={filterEndDate}
                 onChange={(start, end) => {
                   setFilterStartDate(start);
                   setFilterEndDate(end);
+                  if (start || end) {
+                    setFilterCompletedStartDate('');
+                    setFilterCompletedEndDate('');
+                  }
                   setCurrentPage(1);
                 }}
                 availableDates={uniqueDates}
-                placeholder="Date Range"
+                placeholder="Deal Date"
               />
+
+              {/* Completed At / Barter Received Date Range Filter */}
+              <DayCalendarPicker
+                startDate={filterCompletedStartDate}
+                endDate={filterCompletedEndDate}
+                onChange={(start, end) => {
+                  setFilterCompletedStartDate(start);
+                  setFilterCompletedEndDate(end);
+                  if (start || end) {
+                    setFilterStartDate('');
+                    setFilterEndDate('');
+                  }
+                  setCurrentPage(1);
+                }}
+                availableDates={uniqueCompletedDates}
+                placeholder="Completed Date"
+                activeColor="emerald"
+                icon={<CheckCircle2 size={13} className="text-emerald-600 shrink-0" />}
+              />
+
+              {/* Barter Received Highlight Pill when Completed Date filter is active */}
+              {(filterCompletedStartDate || filterCompletedEndDate) && (
+                <div
+                  className={`px-3 py-1.5 rounded-xl border text-xs font-black flex items-center gap-1.5 shadow-2xs animate-in fade-in transition ${
+                    barterReceivedOnCompletedDates > 0
+                      ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
+                      : 'bg-amber-50 text-amber-900 border-amber-300'
+                  }`}
+                  title={`Barter received between ${formatIsoDisplay(filterCompletedStartDate) || 'start'} and ${formatIsoDisplay(filterCompletedEndDate) || formatIsoDisplay(filterCompletedStartDate)}`}
+                >
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${barterReceivedOnCompletedDates > 0 ? 'bg-emerald-500 animate-ping' : 'bg-amber-500'}`}></span>
+                  <span>
+                    Barter Received: <strong className={barterReceivedOnCompletedDates > 0 ? 'text-emerald-950 font-black' : 'text-amber-950 font-black'}>{barterReceivedOnCompletedDates} Completed</strong>
+                  </span>
+                  {barterReceivedOnCompletedDates === 0 && uniqueCompletedDates.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const targetD = uniqueCompletedDates[0];
+                        setFilterCompletedStartDate(targetD);
+                        setFilterCompletedEndDate(targetD);
+                      }}
+                      className="ml-1 px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[10px] hover:bg-emerald-700 transition cursor-pointer"
+                      title="View completed barter deals"
+                    >
+                      View {formatIsoDisplay(uniqueCompletedDates[0]).replace(/, \d{4}$/, '')} ({barterCollabs.length})
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Quick Escalation Filter Toggle Button */}
               {influencers.filter(i => isCollaborationEscalated(i)).length > 0 && (
@@ -3159,8 +3321,117 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                     </tr>
                   ) : paginatedInfluencers.length === 0 ? (
                     <tr>
-                      <td colSpan={15} className="p-12 text-center text-slate-400 font-semibold">
-                        No collaboration records match the selected filters.
+                      <td colSpan={15} className="p-8 text-center">
+                        {filterCompletedStartDate || filterCompletedEndDate ? (
+                          <div className="max-w-lg mx-auto py-5 px-6 rounded-2xl bg-emerald-50/80 border border-emerald-200 text-slate-800 shadow-xs">
+                            <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center mx-auto mb-3 border border-emerald-200/80 shadow-2xs">
+                              <CheckCircle2 size={24} />
+                            </div>
+                            <h4 className="text-sm font-black text-emerald-950 mb-1">
+                              0 Barter Deals Completed Between{' '}
+                              <span className="text-emerald-700 font-extrabold underline decoration-emerald-300">
+                                {formatIsoDisplay(filterCompletedStartDate) || 'Start'}
+                              </span>{' '}
+                              and{' '}
+                              <span className="text-emerald-700 font-extrabold underline decoration-emerald-300">
+                                {formatIsoDisplay(filterCompletedEndDate) || formatIsoDisplay(filterCompletedStartDate)}
+                              </span>
+                            </h4>
+                            <p className="text-xs text-slate-600 mb-3.5 leading-relaxed">
+                              No barter collaborations reached completed status in this specific date range.
+                              {uniqueCompletedDates.length > 0 && (
+                                <span className="block mt-1 font-bold text-emerald-900 bg-emerald-100/60 py-1 px-2.5 rounded-lg border border-emerald-200/60">
+                                  ✨ In {currentDate.toLocaleString('default', { month: 'long', year: 'numeric' })}, {barterCollabs.length} barter {barterCollabs.length === 1 ? 'deal was' : 'deals were'} completed on{' '}
+                                  <strong className="font-black text-emerald-950">
+                                    {uniqueCompletedDates.map(d => formatIsoDisplay(d)).join(', ')}
+                                  </strong>.
+                                </span>
+                              )}
+                              {dealsInitiatedInCompletedRange > 0 && (
+                                <span className="block mt-1 text-slate-600 font-medium">
+                                  📦 <strong>{dealsInitiatedInCompletedRange} active {dealsInitiatedInCompletedRange === 1 ? 'deal was' : 'deals were'}</strong> initiated in this period (currently in Parcel Sent, Pending, or In Discussion).
+                                </span>
+                              )}
+                            </p>
+                            <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                              {uniqueCompletedDates.length > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const targetD = uniqueCompletedDates[0];
+                                    setFilterCompletedStartDate(targetD);
+                                    setFilterCompletedEndDate(targetD);
+                                    setCurrentPage(1);
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-bold text-xs hover:bg-emerald-700 transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <CheckCircle2 size={13} />
+                                  <span>View Completed on {formatIsoDisplay(uniqueCompletedDates[0])} ({barterCollabs.length})</span>
+                                </button>
+                              )}
+                              {dealsInitiatedInCompletedRange > 0 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setFilterStartDate(filterCompletedStartDate);
+                                    setFilterEndDate(filterCompletedEndDate);
+                                    setFilterCompletedStartDate('');
+                                    setFilterCompletedEndDate('');
+                                    setCurrentPage(1);
+                                  }}
+                                  className="px-3 py-1.5 rounded-xl bg-purple-600 text-white font-bold text-xs hover:bg-purple-700 transition shadow-2xs cursor-pointer flex items-center gap-1.5"
+                                >
+                                  <Calendar size={13} />
+                                  <span>View by Deal Date ({dealsInitiatedInCompletedRange} Deals)</span>
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                onClick={resetAllFilters}
+                                className="px-3 py-1.5 rounded-xl bg-white border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 transition cursor-pointer"
+                              >
+                                Reset All Filters
+                              </button>
+                            </div>
+                          </div>
+                        ) : filterStartDate || filterEndDate ? (
+                          <div className="max-w-md mx-auto py-5 px-6 rounded-2xl bg-purple-50/80 border border-purple-200 text-slate-800 shadow-xs">
+                            <div className="w-11 h-11 rounded-2xl bg-purple-100 text-purple-700 flex items-center justify-center mx-auto mb-2.5">
+                              <Calendar size={22} />
+                            </div>
+                            <h4 className="text-sm font-black text-purple-950 mb-1">
+                              0 Deals Found for Deal Date Range
+                            </h4>
+                            <p className="text-xs text-slate-600 mb-3">
+                              No collaboration records match the selected deal dates (
+                              {formatIsoDisplay(filterStartDate) || 'Start'} to {formatIsoDisplay(filterEndDate) || formatIsoDisplay(filterStartDate)}).
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFilterStartDate('');
+                                setFilterEndDate('');
+                                setCurrentPage(1);
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-purple-600 text-white font-bold text-xs hover:bg-purple-700 transition cursor-pointer"
+                            >
+                              Clear Deal Date Filter
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="py-6">
+                            <p className="text-slate-400 font-semibold mb-2">No collaboration records match the selected filters.</p>
+                            {hasActiveFilters && (
+                              <button
+                                type="button"
+                                onClick={resetAllFilters}
+                                className="px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs hover:bg-slate-200 transition cursor-pointer"
+                              >
+                                Reset Filters
+                              </button>
+                            )}
+                          </div>
+                        )}
                       </td>
                     </tr>
                   ) : (
@@ -3209,7 +3480,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                           <td className="p-3 border-r border-slate-100">
                             {item.influencerManager ? (
                               <>
-                                <div className="font-bold text-slate-800">{item.influencerManager}</div>
+                                <div className="font-bold text-slate-800">{getCanonicalManagerName(item.influencerManager)}</div>
                                 {item.brandManagerTeam && (
                                   <div className="text-[10px] text-purple-700 font-extrabold block">Brand Manager: {item.brandManagerTeam}</div>
                                 )}
@@ -4822,7 +5093,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3 text-xs">
                 <div>
                   <span className="text-slate-400 font-bold block text-[10px]">Assignee (Manager)</span>
-                  <span className="font-black text-slate-800">{selectedViewItem.influencerManager || (selectedViewItem.brandManagerTeam ? 'Unassigned' : '—')}</span>
+                  <span className="font-black text-slate-800">{getCanonicalManagerName(selectedViewItem.influencerManager) || (selectedViewItem.brandManagerTeam ? 'Unassigned' : '—')}</span>
                   {selectedViewItem.brandManagerTeam && (
                     <span className="text-[10px] text-purple-700 font-extrabold block">Brand Manager: {selectedViewItem.brandManagerTeam}</span>
                   )}
@@ -5055,7 +5326,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                   </div>
                   <div>
                     <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">Managed By</span>
-                    <span className="font-extrabold text-xs text-slate-900">{selectedViewItem.influencerManager || (selectedViewItem.brandManagerTeam ? 'Unassigned' : '—')}</span>
+                    <span className="font-extrabold text-xs text-slate-900">{getCanonicalManagerName(selectedViewItem.influencerManager) || (selectedViewItem.brandManagerTeam ? 'Unassigned' : '—')}</span>
                     {selectedViewItem.brandManagerTeam && (
                       <span className="text-[10px] text-purple-700 font-extrabold block">Brand Manager: {selectedViewItem.brandManagerTeam}</span>
                     )}

@@ -102,17 +102,57 @@ const triggerTargetSync = async () => {
 
 const escapeRegex = (str: string) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+export const getCanonicalManagerName = (name?: string): string => {
+  if (!name) return '';
+  const trimmed = name.trim();
+  const lower = trimmed.toLowerCase();
+  if (
+    lower === 'mouli' ||
+    lower === 'mouli pandey' ||
+    lower === 'maouli' ||
+    lower === 'maouli pandey'
+  ) {
+    return 'Mouli Pandey';
+  }
+  if (lower === 'harsh' || lower === 'harsh jonwal') {
+    return 'Harsh Jonwal';
+  }
+  if (lower === 'pp') {
+    return 'PP';
+  }
+  if (lower === 'yash') {
+    return 'Yash';
+  }
+  return trimmed;
+};
+
+export const getManagerSearchRegex = (name: string): RegExp => {
+  const lower = name.trim().toLowerCase();
+  if (
+    lower === 'mouli' ||
+    lower === 'mouli pandey' ||
+    lower === 'maouli' ||
+    lower === 'maouli pandey'
+  ) {
+    return /^(mouli|maouli)( pandey)?$/i;
+  }
+  if (lower === 'harsh' || lower === 'harsh jonwal') {
+    return /^harsh( jonwal)?$/i;
+  }
+  return new RegExp(`^${escapeRegex(name.trim())}$`, 'i');
+};
+
 // GET /api/v1/influencers
 router.get('/', authenticateToken, checkPermission('influencer.view'), async (req: AuthRequest, res: Response) => {
   try {
-    const { category, timeframe, year, month, search, brand, manager, status, deliverable, date, startDate, endDate } = req.query;
+    const { category, timeframe, year, month, search, brand, manager, status, deliverable, date, startDate, endDate, completedStartDate, completedEndDate } = req.query;
     const filter: any = { isDeleted: { $ne: true } };
 
     // 0. Employee Role Scoping (Only show data where employee is the assigned manager/executive)
     if (req.user?.role === 'Employee') {
       const employeeDoc = await getEmployeeForAuthUser(req.user);
       if (employeeDoc) {
-        const empNameRegex = new RegExp(`^${employeeDoc.name.trim()}$`, 'i');
+        const empNameRegex = getManagerSearchRegex(employeeDoc.name);
 
         filter.$and = filter.$and || [];
         filter.$and.push({
@@ -157,55 +197,113 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
       ]
     });
 
-    // 2a. Priority 1: Explicit Date Range (startDate & endDate)
-    if (startDate && typeof startDate === 'string' && startDate.trim()) {
-      const parsedStart = new Date(startDate);
-      const endCandidate = (endDate && typeof endDate === 'string' && endDate.trim()) ? endDate : startDate;
-      const parsedEnd = new Date(endCandidate);
-      if (!isNaN(parsedStart.getTime()) && !isNaN(parsedEnd.getTime())) {
-        const startOfDay = new Date(parsedStart.getFullYear(), parsedStart.getMonth(), parsedStart.getDate(), 0, 0, 0);
-        const endOfDay = new Date(parsedEnd.getFullYear(), parsedEnd.getMonth(), parsedEnd.getDate(), 23, 59, 59);
-        filter.$and = filter.$and || [];
-        filter.$and.push(getDateQuery(startOfDay, endOfDay));
-      }
-    } else if (date && typeof date === 'string' && date.trim()) {
-      // 2b. Exact Single Date
-      const parsedDate = new Date(date);
-      if (!isNaN(parsedDate.getTime())) {
-        const startOfDay = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate(), 0, 0, 0);
-        const endOfDay = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate(), 23, 59, 59);
-        filter.$and = filter.$and || [];
-        filter.$and.push(getDateQuery(startOfDay, endOfDay));
-      }
-    } else if (timeframe && (timeframe as string).includes('_')) {
-      const parts = (timeframe as string).split('_');
-      const monthNames: Record<string, number> = {
-        january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
-        july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
+    const isCompletedFilterActive = !!(
+      (completedStartDate && typeof completedStartDate === 'string' && completedStartDate.trim()) ||
+      (completedEndDate && typeof completedEndDate === 'string' && completedEndDate.trim())
+    );
+
+    if (isCompletedFilterActive) {
+      // User is querying by Completed At date range:
+      // "show all colab that completed on that completed at date range, whether created in that range or earlier"
+      const compStatusFilter = { $in: ['Completed', 'Approved', 'Settled', 'completed', 'approved', 'settled'] };
+      const startComp = completedStartDate ? new Date(String(completedStartDate)) : undefined;
+      const endComp = completedEndDate ? new Date(String(completedEndDate)) : undefined;
+      if (endComp) endComp.setHours(23, 59, 59, 999);
+
+      filter.$and = filter.$and || [];
+      const completedCondition: any = {
+        status: compStatusFilter
       };
-      const mIdx = monthNames[parts[0].toLowerCase()];
-      const yr = Number(parts[1]) || 2026;
-      if (mIdx !== undefined) {
-        const startOfMonth = new Date(yr, mIdx, 1, 0, 0, 0);
-        const endOfMonth = new Date(yr, mIdx + 1, 0, 23, 59, 59);
+
+      if (startComp && endComp) {
+        completedCondition.$or = [
+          { completedAt: { $gte: startComp, $lte: endComp } },
+          {
+            $and: [
+              { $or: [{ completedAt: { $exists: false } }, { completedAt: null }] },
+              { updatedAt: { $gte: startComp, $lte: endComp } }
+            ]
+          }
+        ];
+      } else if (startComp) {
+        completedCondition.$or = [
+          { completedAt: { $gte: startComp } },
+          {
+            $and: [
+              { $or: [{ completedAt: { $exists: false } }, { completedAt: null }] },
+              { updatedAt: { $gte: startComp } }
+            ]
+          }
+        ];
+      } else if (endComp) {
+        completedCondition.$or = [
+          { completedAt: { $lte: endComp } },
+          {
+            $and: [
+              { $or: [{ completedAt: { $exists: false } }, { completedAt: null }] },
+              { updatedAt: { $lte: endComp } }
+            ]
+          }
+        ];
+      }
+      filter.$and.push(completedCondition);
+    } else {
+      // 2a. Priority 1: Explicit Date Range (startDate & endDate)
+      if (startDate && typeof startDate === 'string' && startDate.trim()) {
+        const parsedStart = new Date(startDate);
+        const endCandidate = (endDate && typeof endDate === 'string' && endDate.trim()) ? endDate : startDate;
+        const parsedEnd = new Date(endCandidate);
+        if (!isNaN(parsedStart.getTime()) && !isNaN(parsedEnd.getTime())) {
+          const startOfDay = new Date(parsedStart.getFullYear(), parsedStart.getMonth(), parsedStart.getDate(), 0, 0, 0);
+          const endOfDay = new Date(parsedEnd.getFullYear(), parsedEnd.getMonth(), parsedEnd.getDate(), 23, 59, 59);
+          filter.$and = filter.$and || [];
+          filter.$and.push(getDateQuery(startOfDay, endOfDay));
+        }
+      } else if (date && typeof date === 'string' && date.trim()) {
+        // 2b. Exact Single Date
+        const parsedDate = new Date(date);
+        if (!isNaN(parsedDate.getTime())) {
+          const startOfDay = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate(), 0, 0, 0);
+          const endOfDay = new Date(parsedDate.getFullYear(), parsedDate.getMonth(), parsedDate.getDate(), 23, 59, 59);
+          filter.$and = filter.$and || [];
+          filter.$and.push(getDateQuery(startOfDay, endOfDay));
+        }
+      } else if (timeframe && (timeframe as string).includes('_')) {
+        const parts = (timeframe as string).split('_');
+        const monthNames: Record<string, number> = {
+          january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+          july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
+        };
+        const mIdx = monthNames[parts[0].toLowerCase()];
+        const yr = Number(parts[1]) || 2026;
+        if (mIdx !== undefined) {
+          const startOfMonth = new Date(yr, mIdx, 1, 0, 0, 0);
+          const endOfMonth = new Date(yr, mIdx + 1, 0, 23, 59, 59);
+          filter.$and = filter.$and || [];
+          filter.$and.push(getDateQuery(startOfMonth, endOfMonth));
+        }
+      } else if (timeframe === 'today') {
+        const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+        filter.$and = filter.$and || [];
+        filter.$and.push(getDateQuery(startOfDay, endOfDay));
+      } else if (timeframe === 'monthly' || timeframe === 'Month') {
+        const startOfMonth = new Date(currentYear, currentMonth, 1, 0, 0, 0);
+        const endOfMonth = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59);
         filter.$and = filter.$and || [];
         filter.$and.push(getDateQuery(startOfMonth, endOfMonth));
+      } else if (timeframe === 'yearly' || timeframe === 'Year') {
+        const startOfYear = new Date(currentYear, 0, 1, 0, 0, 0);
+        const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59);
+        filter.$and = filter.$and || [];
+        filter.$and.push(getDateQuery(startOfYear, endOfYear));
       }
-    } else if (timeframe === 'today') {
-      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-      const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-      filter.$and = filter.$and || [];
-      filter.$and.push(getDateQuery(startOfDay, endOfDay));
-    } else if (timeframe === 'monthly' || timeframe === 'Month') {
-      const startOfMonth = new Date(currentYear, currentMonth, 1, 0, 0, 0);
-      const endOfMonth = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59);
-      filter.$and = filter.$and || [];
-      filter.$and.push(getDateQuery(startOfMonth, endOfMonth));
-    } else if (timeframe === 'yearly' || timeframe === 'Year') {
-      const startOfYear = new Date(currentYear, 0, 1, 0, 0, 0);
-      const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59);
-      filter.$and = filter.$and || [];
-      filter.$and.push(getDateQuery(startOfYear, endOfYear));
+    }
+
+    // Global Tab Counts for this timeframe / scope (stable across tab switches & table filters)
+    const timeScopedBase: any = { isDeleted: { $ne: true } };
+    if (filter.$and && filter.$and.length > 0) {
+      timeScopedBase.$and = [...filter.$and];
     }
 
     // 3. Search Filter
@@ -233,7 +331,7 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
           { influencerManager: '' }
         ];
       } else {
-        const mgrRegex = new RegExp(escapeRegex(manager.trim()), 'i');
+        const mgrRegex = getManagerSearchRegex(manager);
         filter.$and = filter.$and || [];
         filter.$and.push({
           $or: [
@@ -262,13 +360,10 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
       baseCategoryFilter.category = category;
     }
 
-    // Global Tab Counts for this timeframe & employee scope (stable across tab switches)
-    const timeScopedBase: any = { isDeleted: { $ne: true } };
-    if (filter.$and) {
-      timeScopedBase.$and = filter.$and;
-    }
+    const monthStart = new Date(currentYear, currentMonth, 1, 0, 0, 0);
+    const monthEnd = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59);
 
-    const [allDistinctBrands, allDistinctManagers, allDistinctStatuses, allDistinctDeliverables, allMatching, paidCount, barterCount, allCount] = await Promise.all([
+    const [allDistinctBrands, allDistinctManagers, allDistinctStatuses, allDistinctDeliverables, allMatching, paidCount, barterCount, allCount, completedMonthDocs] = await Promise.all([
       Influencer.distinct('brandName', baseCategoryFilter),
       Influencer.distinct('influencerManager', baseCategoryFilter),
       Influencer.distinct('status', baseCategoryFilter),
@@ -276,8 +371,35 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
       Influencer.find(filter).select('inAmount outAmount'),
       Influencer.countDocuments({ ...timeScopedBase, category: 'Paid' }),
       Influencer.countDocuments({ ...timeScopedBase, category: 'Barter' }),
-      Influencer.countDocuments(timeScopedBase)
+      Influencer.countDocuments(timeScopedBase),
+      Influencer.find({
+        isDeleted: { $ne: true },
+        ...(category && category !== 'All' ? { category } : {}),
+        status: { $in: ['Completed', 'Approved', 'Settled', 'completed', 'approved', 'settled'] },
+        $or: [
+          { completedAt: { $gte: monthStart, $lte: monthEnd } },
+          {
+            $and: [
+              { $or: [{ completedAt: { $exists: false } }, { completedAt: null }] },
+              { updatedAt: { $gte: monthStart, $lte: monthEnd } }
+            ]
+          }
+        ]
+      }).select('completedAt updatedAt').lean()
     ]);
+
+    const distinctCompletedDates = Array.from(new Set(
+      (completedMonthDocs || []).map((d: any) => {
+        const raw = d.completedAt || d.updatedAt;
+        if (!raw) return '';
+        const dt = new Date(raw);
+        if (isNaN(dt.getTime())) return '';
+        const y = dt.getFullYear();
+        const m = String(dt.getMonth() + 1).padStart(2, '0');
+        const day = String(dt.getDate()).padStart(2, '0');
+        return `${y}-${m}-${day}`;
+      }).filter(Boolean)
+    )).sort();
 
     const totalIn = allMatching.reduce((acc, curr) => acc + (curr.inAmount || 0), 0);
     const totalOut = allMatching.reduce((acc, curr) => acc + (curr.outAmount || 0), 0);
@@ -286,7 +408,7 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
 
     let query = Influencer.find(filter)
       .populate('brandId', 'brandName brandId logo')
-      .sort({ connectedDate: 1, transactionDate: 1, orderDate: 1, sNo: 1 });
+      .sort(isCompletedFilterActive ? { updatedAt: -1, completedAt: -1, sNo: 1 } : { connectedDate: 1, transactionDate: 1, orderDate: 1, sNo: 1 });
 
     if (pageNum !== undefined && limitNum !== undefined) {
       query = query.skip((pageNum - 1) * limitNum).limit(limitNum);
@@ -345,7 +467,8 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
         totalOut,
         netBalance,
         totalCount,
-        escalatedCount
+        escalatedCount,
+        barterReceivedCount: influencers.filter((i: any) => i.category === 'Barter' && (i.status === 'Completed' || i.status === 'Approved' || i.status === 'Settled')).length
       },
       tabCounts: {
         paid: paidCount,
@@ -354,9 +477,10 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
       },
       filterOptions: {
         brands: (allDistinctBrands as string[]).filter(Boolean).map(s => s.trim()).filter((v, i, a) => a.indexOf(v) === i).sort(),
-        managers: (allDistinctManagers as string[]).filter(Boolean).map(s => s.trim()).filter((v, i, a) => a.indexOf(v) === i).sort(),
+        managers: Array.from(new Set((allDistinctManagers as string[]).filter(Boolean).map(s => getCanonicalManagerName(s.trim())))).filter(Boolean).sort(),
         statuses: (allDistinctStatuses as string[]).filter(Boolean).map(s => s.trim()).filter((v, i, a) => a.indexOf(v) === i).sort(),
-        deliverables: (allDistinctDeliverables as string[]).filter(Boolean).map(s => s.trim()).filter((v, i, a) => a.indexOf(v) === i).sort()
+        deliverables: (allDistinctDeliverables as string[]).filter(Boolean).map(s => s.trim()).filter((v, i, a) => a.indexOf(v) === i).sort(),
+        completedDates: distinctCompletedDates
       },
       pagination: {
         page: pageNum || 1,
@@ -432,7 +556,7 @@ router.post('/', authenticateToken, checkPermission('influencer.create'), async 
       sNo: count + 1,
       transactionDate: transactionDate ? new Date(transactionDate) : undefined,
       connectedDate: connectedDate ? new Date(connectedDate) : new Date(),
-      influencerManager: influencerManager || req.user?.name || '',
+      influencerManager: influencerManager ? getCanonicalManagerName(influencerManager) : (req.user?.name ? getCanonicalManagerName(req.user.name) : ''),
       brandManagerTeam: brandManagerTeam || '',
       brandId: brandId || undefined,
       brandName: finalBrandName || 'General',
@@ -549,7 +673,7 @@ router.put('/:id', authenticateToken, checkPermission('influencer.update'), asyn
     const oldInfluencerName = record.influencerName;
 
     if (influencerName !== undefined) record.influencerName = influencerName;
-    if (influencerManager !== undefined) record.influencerManager = influencerManager;
+    if (influencerManager !== undefined) record.influencerManager = getCanonicalManagerName(influencerManager);
     if (brandManagerTeam !== undefined) record.brandManagerTeam = brandManagerTeam;
     if (brandId !== undefined) record.brandId = brandId || undefined;
     if (brandName) record.brandName = brandName;

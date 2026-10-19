@@ -10,6 +10,8 @@ export interface DayCalendarPickerProps {
   placeholder?: string;
   align?: 'left' | 'right';
   className?: string;
+  icon?: React.ReactNode;
+  activeColor?: 'purple' | 'emerald';
 }
 
 export const DayCalendarPicker: React.FC<DayCalendarPickerProps> = ({
@@ -20,7 +22,9 @@ export const DayCalendarPicker: React.FC<DayCalendarPickerProps> = ({
   availableDates = [],
   placeholder = 'Date Range',
   align = 'left',
-  className = ''
+  className = '',
+  icon,
+  activeColor = 'purple'
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -261,26 +265,31 @@ export const DayCalendarPicker: React.FC<DayCalendarPickerProps> = ({
   // Format label for the trigger button
   const formatTriggerLabel = () => {
     if (!propStart && !propEnd) return placeholder;
-    if (propStart && !propEnd) return `${formatDateDisplay(propStart)} ➔ End?`;
-    if (propStart && propEnd) {
-      if (propStart === propEnd) return formatDateDisplay(propStart);
-      const [y1, m1, d1] = propStart.split('-').map(Number);
-      const [y2, m2, d2] = propEnd.split('-').map(Number);
-      const dt1 = new Date(y1, m1 - 1, d1);
-      const dt2 = new Date(y2, m2 - 1, d2);
-
-      if (y1 === y2 && m1 === m2) {
-        const mStr = dt1.toLocaleDateString(undefined, { month: 'short' });
-        return `${mStr} ${d1} – ${d2}, ${y1}`;
-      } else if (y1 === y2) {
-        const m1Str = dt1.toLocaleDateString(undefined, { month: 'short' });
-        const m2Str = dt2.toLocaleDateString(undefined, { month: 'short' });
-        return `${m1Str} ${d1} – ${m2Str} ${d2}, ${y1}`;
+    let rangeText = '';
+    if (propStart && !propEnd) {
+      rangeText = `${formatDateDisplay(propStart)} ➔ End?`;
+    } else if (propStart && propEnd) {
+      if (propStart === propEnd) {
+        rangeText = formatDateDisplay(propStart);
       } else {
-        return `${formatDateDisplay(propStart)} – ${formatDateDisplay(propEnd)}`;
+        const [y1, m1, d1] = propStart.split('-').map(Number);
+        const [y2, m2, d2] = propEnd.split('-').map(Number);
+        const dt1 = new Date(y1, m1 - 1, d1);
+        const dt2 = new Date(y2, m2 - 1, d2);
+
+        if (y1 === y2 && m1 === m2) {
+          const mStr = dt1.toLocaleDateString(undefined, { month: 'short' });
+          rangeText = `${mStr} ${d1} – ${d2}, ${y1}`;
+        } else if (y1 === y2) {
+          const m1Str = dt1.toLocaleDateString(undefined, { month: 'short' });
+          const m2Str = dt2.toLocaleDateString(undefined, { month: 'short' });
+          rangeText = `${m1Str} ${d1} – ${m2Str} ${d2}, ${y1}`;
+        } else {
+          rangeText = `${formatDateDisplay(propStart)} – ${formatDateDisplay(propEnd)}`;
+        }
       }
     }
-    return placeholder;
+    return placeholder ? `${placeholder}: ${rangeText}` : rangeText;
   };
 
   const todayIso = new Date().toISOString().split('T')[0];
@@ -298,18 +307,30 @@ export const DayCalendarPicker: React.FC<DayCalendarPickerProps> = ({
         onClick={() => setIsOpen(prev => !prev)}
         className={`px-3 py-1.5 rounded-xl border text-xs font-bold flex items-center gap-2 transition cursor-pointer select-none shadow-2xs whitespace-nowrap ${
           hasSelection
-            ? 'bg-purple-600 text-white border-purple-700 ring-2 ring-purple-300'
-            : 'bg-white border-slate-200 hover:border-purple-300 hover:bg-purple-50/40 text-slate-700'
+            ? (activeColor === 'emerald'
+                ? 'bg-emerald-600 text-white border-emerald-700 ring-2 ring-emerald-300'
+                : 'bg-purple-600 text-white border-purple-700 ring-2 ring-purple-300')
+            : (activeColor === 'emerald'
+                ? 'bg-white border-slate-200 hover:border-emerald-300 hover:bg-emerald-50/40 text-slate-700'
+                : 'bg-white border-slate-200 hover:border-purple-300 hover:bg-purple-50/40 text-slate-700')
         }`}
-        title={hasSelection ? `Filtered: ${formatTriggerLabel()}` : 'Select date range'}
+        title={hasSelection ? `Filtered: ${formatTriggerLabel()}` : `Select ${placeholder || 'date range'}`}
       >
-        <Calendar size={13} className={hasSelection ? 'text-white shrink-0' : 'text-purple-600 shrink-0'} />
-        <span className="truncate max-w-[190px]">{formatTriggerLabel()}</span>
+        {icon ? (
+          <span className={hasSelection ? 'text-white shrink-0' : (activeColor === 'emerald' ? 'text-emerald-600 shrink-0' : 'text-purple-600 shrink-0')}>
+            {icon}
+          </span>
+        ) : (
+          <Calendar size={13} className={hasSelection ? 'text-white shrink-0' : (activeColor === 'emerald' ? 'text-emerald-600 shrink-0' : 'text-purple-600 shrink-0')} />
+        )}
+        <span className="truncate max-w-[260px]">{formatTriggerLabel()}</span>
 
         {hasSelection ? (
           <span
             onClick={handleClear}
-            className="p-0.5 hover:bg-purple-700/90 rounded-full transition cursor-pointer ml-0.5 shrink-0"
+            className={`p-0.5 rounded-full transition cursor-pointer ml-0.5 shrink-0 ${
+              activeColor === 'emerald' ? 'hover:bg-emerald-700/90' : 'hover:bg-purple-700/90'
+            }`}
             title="Clear date filter"
           >
             <X size={12} />
@@ -352,24 +373,28 @@ export const DayCalendarPicker: React.FC<DayCalendarPickerProps> = ({
           </div>
 
           {/* Range Selection Status Banner */}
-          <div className="flex items-center justify-between px-2.5 py-1.5 mb-2.5 bg-purple-50/70 border border-purple-100 rounded-xl text-[11px]">
+          <div className={`flex items-center justify-between px-2.5 py-1.5 mb-2.5 rounded-xl text-[11px] ${
+            activeColor === 'emerald'
+              ? 'bg-emerald-50/80 border border-emerald-100'
+              : 'bg-purple-50/70 border border-purple-100'
+          }`}>
             <div className="flex items-center gap-1.5 truncate">
               {!tempStart && !tempEnd && (
                 <span className="text-slate-500 font-medium flex items-center gap-1">
-                  <Calendar size={12} className="text-purple-600 shrink-0" />
+                  <Calendar size={12} className={activeColor === 'emerald' ? 'text-emerald-600 shrink-0' : 'text-purple-600 shrink-0'} />
                   Click a start date
                 </span>
               )}
               {tempStart && !tempEnd && (
-                <span className="text-purple-900 font-bold flex items-center gap-1 truncate">
-                  <span className="text-purple-600 font-black">Start:</span>
+                <span className={`${activeColor === 'emerald' ? 'text-emerald-900' : 'text-purple-900'} font-bold flex items-center gap-1 truncate`}>
+                  <span className={`${activeColor === 'emerald' ? 'text-emerald-600' : 'text-purple-600'} font-black`}>Start:</span>
                   <span>{formatDateDisplay(tempStart)}</span>
-                  <ArrowRight size={11} className="text-purple-500 shrink-0 animate-pulse" />
-                  <span className="text-purple-700 italic font-semibold">Select end date</span>
+                  <ArrowRight size={11} className={`${activeColor === 'emerald' ? 'text-emerald-500' : 'text-purple-500'} shrink-0 animate-pulse`} />
+                  <span className={`${activeColor === 'emerald' ? 'text-emerald-700' : 'text-purple-700'} italic font-semibold`}>Select end date</span>
                 </span>
               )}
               {tempStart && tempEnd && (
-                <span className="text-purple-950 font-extrabold truncate">
+                <span className={`${activeColor === 'emerald' ? 'text-emerald-950' : 'text-purple-950'} font-extrabold truncate`}>
                   {tempStart === tempEnd
                     ? formatDateDisplay(tempStart)
                     : `${formatDateDisplay(tempStart)} → ${formatDateDisplay(tempEnd)}`}
@@ -421,6 +446,42 @@ export const DayCalendarPicker: React.FC<DayCalendarPickerProps> = ({
             </button>
           </div>
 
+          {/* Available Dates Quick Shortcuts (if any matching dates in month) */}
+          {availableDates.length > 0 && availableDates.length <= 5 && (
+            <div className={`flex items-center gap-1.5 mb-2 px-2.5 py-1 rounded-xl text-[10px] border ${
+              activeColor === 'emerald'
+                ? 'bg-emerald-50/80 border-emerald-200/80 text-emerald-900'
+                : 'bg-purple-50/80 border-purple-200/80 text-purple-900'
+            }`}>
+              <span className={`w-1.5 h-1.5 rounded-full ${activeColor === 'emerald' ? 'bg-emerald-500' : 'bg-purple-500'} shrink-0`} />
+              <span className="font-semibold text-slate-600 shrink-0">
+                {activeColor === 'emerald' ? 'Completed Deals:' : 'Available:'}
+              </span>
+              <div className="flex items-center gap-1 flex-wrap">
+                {availableDates.map(dIso => (
+                  <button
+                    key={dIso}
+                    type="button"
+                    onClick={() => {
+                      setTempStart(dIso);
+                      setTempEnd(dIso);
+                      onChange(dIso, dIso);
+                      setIsOpen(false);
+                    }}
+                    className={`px-1.5 py-0.5 rounded font-black transition cursor-pointer ${
+                      activeColor === 'emerald'
+                        ? 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs'
+                        : 'bg-purple-600 text-white hover:bg-purple-700 shadow-2xs'
+                    }`}
+                    title={`Filter by ${dIso}`}
+                  >
+                    {formatDateDisplay(dIso).replace(/, \d{4}$/, '')}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Days of Week Header */}
           <div className="grid grid-cols-7 text-center mb-1">
             {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map((d, i) => (
@@ -468,30 +529,33 @@ export const DayCalendarPicker: React.FC<DayCalendarPickerProps> = ({
               let textColor = item.isCurrentMonth ? 'text-slate-700' : 'text-slate-300';
               let rounded = 'rounded-xl';
 
+              const isEm = activeColor === 'emerald';
               if (isSingleDay) {
-                cellBg = 'bg-purple-600 text-white font-black shadow-md shadow-purple-600/30 ring-2 ring-purple-300';
+                cellBg = isEm
+                  ? 'bg-emerald-600 text-white font-black shadow-md shadow-emerald-600/30 ring-2 ring-emerald-300'
+                  : 'bg-purple-600 text-white font-black shadow-md shadow-purple-600/30 ring-2 ring-purple-300';
                 textColor = 'text-white';
                 rounded = 'rounded-xl';
               } else if (isStart) {
-                cellBg = 'bg-purple-600 text-white font-black shadow-sm';
+                cellBg = isEm ? 'bg-emerald-600 text-white font-black shadow-sm' : 'bg-purple-600 text-white font-black shadow-sm';
                 textColor = 'text-white';
-                rounded = activeEnd ? 'rounded-l-xl rounded-r-none' : 'rounded-xl ring-2 ring-purple-300';
+                rounded = activeEnd ? 'rounded-l-xl rounded-r-none' : (isEm ? 'rounded-xl ring-2 ring-emerald-300' : 'rounded-xl ring-2 ring-purple-300');
               } else if (isEnd) {
-                cellBg = tempEnd ? 'bg-purple-600 text-white font-black shadow-sm' : 'bg-purple-400 text-white font-bold';
+                cellBg = tempEnd ? (isEm ? 'bg-emerald-600 text-white font-black shadow-sm' : 'bg-purple-600 text-white font-black shadow-sm') : (isEm ? 'bg-emerald-400 text-white font-bold' : 'bg-purple-400 text-white font-bold');
                 textColor = 'text-white';
                 rounded = 'rounded-r-xl rounded-l-none';
               } else if (isInRange) {
-                cellBg = 'bg-purple-100 text-purple-900 font-bold';
-                textColor = 'text-purple-900';
+                cellBg = isEm ? 'bg-emerald-100 text-emerald-900 font-bold' : 'bg-purple-100 text-purple-900 font-bold';
+                textColor = isEm ? 'text-emerald-900' : 'text-purple-900';
                 rounded = 'rounded-none';
               } else if (isPreviewRange) {
-                cellBg = 'bg-purple-50 text-purple-900 font-semibold border-y border-purple-200 border-dashed';
-                textColor = 'text-purple-900';
+                cellBg = isEm ? 'bg-emerald-50 text-emerald-900 font-semibold border-y border-emerald-200 border-dashed' : 'bg-purple-50 text-purple-900 font-semibold border-y border-purple-200 border-dashed';
+                textColor = isEm ? 'text-emerald-900' : 'text-purple-900';
                 rounded = 'rounded-none';
               } else if (item.isCurrentMonth) {
                 if (hasData) {
-                  cellBg = 'bg-purple-50/60 text-purple-900 font-black hover:bg-purple-100';
-                  textColor = 'text-purple-900';
+                  cellBg = isEm ? 'bg-emerald-50/60 text-emerald-900 font-black hover:bg-emerald-100' : 'bg-purple-50/60 text-purple-900 font-black hover:bg-purple-100';
+                  textColor = isEm ? 'text-emerald-900' : 'text-purple-900';
                 } else {
                   cellBg = 'hover:bg-slate-100';
                 }
@@ -516,7 +580,7 @@ export const DayCalendarPicker: React.FC<DayCalendarPickerProps> = ({
                     <span>{item.day}</span>
                     {/* Indicator Dot for Days with data in ledger */}
                     {hasData && !isStart && !isEnd && !isInRange && (
-                      <span className="w-1 h-1 rounded-full bg-purple-600 absolute bottom-1" />
+                      <span className={`w-1.5 h-1.5 rounded-full ${isEm ? 'bg-emerald-600 ring-1 ring-white' : 'bg-purple-600'} absolute bottom-0.5 shadow-2xs`} />
                     )}
                   </button>
                 </div>

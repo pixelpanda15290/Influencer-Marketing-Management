@@ -233,7 +233,9 @@ router.get('/team-breakdown', authenticateToken, checkPermission('target.view'),
         const exec = (c.assignedExecutive || '').toLowerCase();
         const brand = (c.brandName || '').toLowerCase().trim();
 
-        const nameMatch = empName && (mgr.includes(empName) || exec.includes(empName));
+        const isMouli = empName.includes('mouli') || empName.includes('maouli');
+        const mouliMatch = isMouli && (/mouli|maouli/i.test(mgr) || /mouli|maouli/i.test(exec));
+        const nameMatch = mouliMatch || (empName && (mgr.includes(empName) || exec.includes(empName)));
         const idMatch = empId && (mgr.includes(empId) || exec.includes(empId));
         const brandMatch = brand && assignedBrandNames.includes(brand);
 
