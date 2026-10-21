@@ -729,8 +729,9 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
     if (item.approvalStatus && item.approvalStatus !== 'Pending') {
       lines.push(`Approval Status : ${item.approvalStatus}`);
     }
-    if (item.reason) {
-      lines.push(`Reason : ${item.reason}`);
+    const copyRemark = item.reason || item.remark || (item as any).remarks;
+    if (copyRemark) {
+      lines.push(`Reason / Remarks : ${copyRemark}`);
     }
 
     const text = lines.join('\n');
@@ -1229,7 +1230,9 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
     setPlatform(item.platform || 'Instagram');
     setStatus((item.status as any) || 'Pending');
     setApprovalStatus(item.approvalStatus || (item.isApproved ? 'Approved' : 'Pending'));
-    setReason(item.reason || '');
+    const initialRemark = item.remark || item.reason || (item as any).remarks || '';
+    setReason(initialRemark);
+    setRemark(initialRemark);
     setContentLink(item.contentLink || '');
     setAdsCode(item.adsCode || '');
     setViewsCount(item.viewsCount || 0);
@@ -1238,7 +1241,6 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
     setTransactionDate(item.transactionDate ? item.transactionDate.split('T')[0] : '');
     setConnectedDate(item.connectedDate ? item.connectedDate.split('T')[0] : (item.transactionDate ? item.transactionDate.split('T')[0] : new Date().toISOString().split('T')[0]));
     setNotes(item.notes || '');
-    setRemark(item.remark || '');
     setMoneyReceivedBy(item.moneyReceivedBy || '');
     setPaymentDoneBy(item.paymentDoneBy || '');
     setShowModal(true);
@@ -1286,8 +1288,9 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
         isApproved,
         transactionDate,
         connectedDate,
-        notes,
-        remark,
+        reason: (remark || reason || '').trim(),
+        remark: (remark || reason || '').trim(),
+        notes: notes.trim(),
         moneyReceivedBy,
         paymentDoneBy
       };
@@ -3700,9 +3703,9 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                                 </span>
                               </div>
                             )}
-                            {item.reason && (
-                              <div className="text-[9px] text-slate-500 font-semibold italic max-w-[110px] mx-auto truncate" title={item.reason}>
-                                {item.reason}
+                            {(item.reason || item.remark || (item as any).remarks) && (
+                              <div className="text-[9px] text-slate-500 font-semibold italic max-w-[110px] mx-auto truncate" title={item.reason || item.remark || (item as any).remarks}>
+                                {item.reason || item.remark || (item as any).remarks}
                               </div>
                             )}
                           </td>
@@ -4139,11 +4142,28 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                 <input
                   type="text"
                   placeholder="e.g. Approved by client"
-                  value={reason}
-                  onChange={(e) => setReason(e.target.value)}
+                  value={remark || reason}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setRemark(val);
+                    setReason(val);
+                  }}
                   className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-xs font-semibold text-slate-900"
                 />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-slate-700 mb-1 font-bold">
+                Internal Notes <span className="text-slate-400 font-normal text-[10px]">(Optional)</span>
+              </label>
+              <input
+                type="text"
+                placeholder="e.g. Followed up on WhatsApp, awaiting sample confirmation"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-xs font-semibold text-slate-900"
+              />
             </div>
           </div>
 
@@ -5335,12 +5355,12 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
               </div>
 
               {/* Rejection / Disapproval Alert Box */}
-              {selectedViewItem.reason && (
+              {(selectedViewItem.approvalStatus === 'Not Approved' || selectedViewItem.status === 'Product Returned') && (selectedViewItem.reason || selectedViewItem.remark) && (
                 <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl space-y-1">
                   <span className="text-[10px] font-black uppercase text-rose-700 flex items-center gap-1">
                     <AlertCircle size={12} /> Disapproval / Rejection Reason
                   </span>
-                  <div className="font-bold text-rose-900 text-xs">{selectedViewItem.reason}</div>
+                  <div className="font-bold text-rose-900 text-xs">{selectedViewItem.reason || selectedViewItem.remark}</div>
                 </div>
               )}
 
@@ -5348,8 +5368,8 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1">
                   <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">Remarks</span>
-                  {selectedViewItem.remark ? (
-                    <p className="font-medium text-slate-700 text-xs">{selectedViewItem.remark}</p>
+                  {(selectedViewItem.remark || selectedViewItem.reason || (selectedViewItem as any).remarks) ? (
+                    <p className="font-medium text-slate-700 text-xs whitespace-pre-wrap">{selectedViewItem.remark || selectedViewItem.reason || (selectedViewItem as any).remarks}</p>
                   ) : (
                     <p className="font-medium text-slate-400 italic text-xs">No remarks added</p>
                   )}
@@ -5358,7 +5378,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                 <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1">
                   <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">Internal Notes</span>
                   {selectedViewItem.notes ? (
-                    <p className="font-medium text-slate-700 text-xs">{selectedViewItem.notes}</p>
+                    <p className="font-medium text-slate-700 text-xs whitespace-pre-wrap">{selectedViewItem.notes}</p>
                   ) : (
                     <p className="font-medium text-slate-400 italic text-xs">No internal notes added</p>
                   )}

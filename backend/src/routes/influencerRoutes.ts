@@ -503,7 +503,7 @@ router.post('/', authenticateToken, checkPermission('influencer.create'), async 
       influencerName, influencerManager, brandManagerTeam, brandId, brandName, phone, profileLink, influencerInstagramId, category,
       brandOnboardingAmt, brandReceivedAmt, influencerOnboardingAmt, influencerPaidAmt, finalPaymentReceived,
       inAmount, outAmount, productLink, videoType, videoDescription, refVideoLink, referenceVideoLink, orderId, orderDate,
-      platform, status, contentLink, adsCode, viewsCount, ordersCount, ordersGenerated, isApproved, approvalStatus, reason, notes, remark, transactionDate, connectedDate
+      platform, status, contentLink, adsCode, viewsCount, ordersCount, ordersGenerated, isApproved, approvalStatus, reason, notes, remark, remarks, transactionDate, connectedDate
     } = req.body;
 
     let finalBrandName = brandName;
@@ -600,9 +600,9 @@ router.post('/', authenticateToken, checkPermission('influencer.create'), async 
       isOrderBonusQualified,
       isApproved: isApproved !== undefined ? !!isApproved : (approvalStatus === 'Approved' || targetStatus === 'Approved' || targetStatus === 'Completed'),
       approvalStatus: approvalStatus || (targetStatus === 'Approved' || targetStatus === 'Completed' ? 'Approved' : 'Pending'),
-      reason: reason || '',
-      notes: notes || '',
-      remark: remark || '',
+      reason: (reason !== undefined && reason !== null && String(reason).trim() !== '') ? String(reason).trim() : (remark || remarks || ''),
+      notes: notes ? String(notes).trim() : '',
+      remark: (remark !== undefined && remark !== null && String(remark).trim() !== '') ? String(remark).trim() : (remarks || reason || ''),
       createdBy: req.user?._id
     });
 
@@ -661,7 +661,7 @@ router.put('/:id', authenticateToken, checkPermission('influencer.update'), asyn
       influencerName, influencerManager, brandManagerTeam, brandId, brandName, phone, profileLink, influencerInstagramId, category,
       brandOnboardingAmt, brandReceivedAmt, influencerOnboardingAmt, influencerPaidAmt, finalPaymentReceived,
       inAmount, outAmount, productLink, videoType, videoDescription, refVideoLink, referenceVideoLink, orderId, orderDate,
-      platform, status, contentLink, adsCode, viewsCount, ordersCount, ordersGenerated, isApproved, approvalStatus, reason, notes, remark, transactionDate, connectedDate
+      platform, status, contentLink, adsCode, viewsCount, ordersCount, ordersGenerated, isApproved, approvalStatus, reason, notes, remark, remarks, transactionDate, connectedDate
     } = req.body;
 
     const record = await Influencer.findById(req.params.id);
@@ -755,9 +755,15 @@ router.put('/:id', authenticateToken, checkPermission('influencer.update'), asyn
     }
     if (isApproved !== undefined) record.isApproved = !!isApproved;
     if (approvalStatus !== undefined) record.approvalStatus = approvalStatus;
-    if (reason !== undefined) record.reason = reason;
-    if (notes !== undefined) record.notes = notes;
-    if (remark !== undefined) record.remark = remark;
+    const inputRemark = remark !== undefined ? remark : remarks;
+    if (inputRemark !== undefined || reason !== undefined) {
+      const cleanRemark = inputRemark !== undefined && inputRemark !== null ? String(inputRemark).trim() : '';
+      const cleanReason = reason !== undefined && reason !== null ? String(reason).trim() : '';
+      const effectiveVal = cleanRemark || cleanReason;
+      record.remark = cleanRemark || effectiveVal;
+      record.reason = cleanReason || effectiveVal;
+    }
+    if (notes !== undefined) record.notes = notes !== null ? String(notes).trim() : '';
     if (transactionDate !== undefined) record.transactionDate = transactionDate ? new Date(transactionDate) : (undefined as any);
     if (connectedDate !== undefined) record.connectedDate = connectedDate ? new Date(connectedDate) : (undefined as any);
 
