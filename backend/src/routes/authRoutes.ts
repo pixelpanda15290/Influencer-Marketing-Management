@@ -191,9 +191,17 @@ router.post('/verify-otp', async (req: AuthRequest, res: Response) => {
     const roleDoc = await Role.findOne({ name: user.role });
     const permissions = roleDoc ? roleDoc.permissions : [];
     const [employee, brandDetails] = await Promise.all([
-      Employee.findOne({ email: user.email }),
+      getEmployeeForAuthUser(user),
       user.brandId ? Brand.findById(user.brandId).lean() : null
     ]);
+
+    if (employee && employee.role && user.role !== employee.role && employee.role !== 'Employee') {
+      user.role = employee.role;
+      await user.save();
+    }
+    const effectiveRole = (employee?.role && employee.role !== 'Employee')
+      ? employee.role
+      : (user.role && user.role !== 'Employee' ? user.role : (employee?.designation || user.role));
 
     await logActivity({
       userId: user._id,
@@ -214,7 +222,7 @@ router.post('/verify-otp', async (req: AuthRequest, res: Response) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        role: effectiveRole,
         employeeId: employee ? employee.employeeId : user.employeeId,
         brandId: user.brandId,
         brandDetails,
@@ -491,9 +499,17 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
     const permissions = roleDoc ? roleDoc.permissions : [];
 
     const [employee, brandDetails] = await Promise.all([
-      Employee.findOne({ email: user.email }),
+      getEmployeeForAuthUser(user),
       user.brandId ? Brand.findById(user.brandId).lean() : null
     ]);
+
+    if (employee && employee.role && user.role !== employee.role && employee.role !== 'Employee') {
+      user.role = employee.role;
+      await user.save();
+    }
+    const effectiveRole = (employee?.role && employee.role !== 'Employee')
+      ? employee.role
+      : (user.role && user.role !== 'Employee' ? user.role : (employee?.designation || user.role));
 
     await logActivity({
       userId: user._id,
@@ -514,7 +530,7 @@ router.post('/login', async (req: AuthRequest, res: Response) => {
         id: user._id,
         name: user.name,
         email: user.email,
-        role: user.role,
+        role: effectiveRole,
         employeeId: employee ? employee.employeeId : user.employeeId,
         brandId: user.brandId,
         brandDetails,
@@ -563,11 +579,19 @@ router.get('/me', authenticateToken, async (req: AuthRequest, res: Response) => 
       req.user.brandId ? Brand.findById(req.user.brandId).lean() : null
     ]);
 
+    if (employee && employee.role && req.user.role !== employee.role && employee.role !== 'Employee') {
+      req.user.role = employee.role;
+      await req.user.save();
+    }
+    const effectiveRole = (employee?.role && employee.role !== 'Employee')
+      ? employee.role
+      : (req.user.role && req.user.role !== 'Employee' ? req.user.role : (employee?.designation || req.user.role));
+
     const userObj = {
       id: req.user._id,
       name: req.user.name,
       email: req.user.email,
-      role: req.user.role,
+      role: effectiveRole,
       employeeId: employee ? employee.employeeId : req.user.employeeId,
       brandId: req.user.brandId,
       brandDetails,

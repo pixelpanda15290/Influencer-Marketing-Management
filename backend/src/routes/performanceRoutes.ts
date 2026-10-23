@@ -1,9 +1,11 @@
+import mongoose from 'mongoose';
 import { Router, Response } from 'express';
 import { Employee, Task, EmployeeBrand, Influencer, Brand } from '../models/allModels';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { checkPermission } from '../middleware/rbac';
 import { buildDateFilter } from './targetRoutes';
 import { getEmployeeForAuthUser } from '../utils/employeeHelper';
+import { isManagerOrAdminRole } from '../config/constants';
 
 const router = Router();
 
@@ -15,15 +17,23 @@ router.get('/', authenticateToken, checkPermission('performance.view'), async (r
 
     let filter: any = { status: 'Active' };
 
-    // Employee Role Isolation: If user is an employee, only return their own performance data
-    const isEmployeeRole = req.user?.role?.toLowerCase() === 'employee';
-    if (isEmployeeRole) {
+    // Employee Role Isolation: If user is not manager, assistant manager, or admin, only return their own performance data
+    const isManagerOrAdmin = isManagerOrAdminRole(req.user?.role);
+    if (!isManagerOrAdmin) {
       const emp = await getEmployeeForAuthUser(req.user);
       if (emp) {
         filter._id = emp._id;
       } else {
-        filter._id = null;
+        filter._id = new mongoose.Types.ObjectId();
       }
+    } else if (search && typeof search === 'string' && search.trim()) {
+      const searchRegex = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.$or = [
+        { name: searchRegex },
+        { employeeId: searchRegex },
+        { designation: searchRegex },
+        { email: searchRegex }
+      ];
     }
 
     const totalCount = await Employee.countDocuments(filter);
@@ -217,6 +227,14 @@ router.get('/', authenticateToken, checkPermission('performance.view'), async (r
 // GET /api/v1/performance/:employeeId
 router.get('/:employeeId', authenticateToken, checkPermission('performance.view'), async (req: AuthRequest, res: Response) => {
   try {
+    const isManagerOrAdmin = isManagerOrAdminRole(req.user?.role);
+    if (!isManagerOrAdmin) {
+      const currentEmp = await getEmployeeForAuthUser(req.user);
+      if (!currentEmp || currentEmp._id.toString() !== req.params.employeeId) {
+        return res.status(403).json({ success: false, message: 'Access denied: You can only view your own performance' });
+      }
+    }
+
     const emp = await Employee.findById(req.params.employeeId);
     if (!emp) return res.status(404).json({ success: false, message: 'No record exists for this employee' });
 

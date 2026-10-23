@@ -181,10 +181,16 @@ router.put('/:id', authenticateToken, checkPermission('employee.update'), async 
     await employee.save();
 
     // Update corresponding user record if role/status/name changed
-    await User.findOneAndUpdate(
-      { email: employee.email },
-      { name: employee.name, role: employee.role, status: employee.status }
-    );
+    const userConditions: any[] = [];
+    if (employee.userId) userConditions.push({ _id: employee.userId });
+    if (employee.employeeId) userConditions.push({ employeeId: employee.employeeId });
+    if (employee.email) userConditions.push({ email: employee.email.toLowerCase().trim() });
+    if (userConditions.length > 0) {
+      await User.findOneAndUpdate(
+        { $or: userConditions },
+        { name: employee.name, role: employee.role, status: employee.status, employeeId: employee.employeeId }
+      );
+    }
 
     await logActivity({
       userId: req.user?._id,
@@ -255,10 +261,16 @@ router.put('/:id/approve', authenticateToken, checkPermission('employee.update')
     employee.department = assignedDepartment;
     await employee.save();
 
-    await User.findOneAndUpdate(
-      { email: employee.email },
-      { status: 'Active', isApproved: true, role: assignedRole }
-    );
+    const approveUserConditions: any[] = [];
+    if (employee.userId) approveUserConditions.push({ _id: employee.userId });
+    if (employee.employeeId) approveUserConditions.push({ employeeId: employee.employeeId });
+    if (employee.email) approveUserConditions.push({ email: employee.email.toLowerCase().trim() });
+    if (approveUserConditions.length > 0) {
+      await User.findOneAndUpdate(
+        { $or: approveUserConditions },
+        { status: 'Active', isApproved: true, role: assignedRole, employeeId: employee.employeeId, name: employee.name }
+      );
+    }
 
     await logActivity({
       userId: req.user?._id,

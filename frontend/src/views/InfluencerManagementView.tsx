@@ -6,7 +6,7 @@ import {
   Award, Clock, AlertCircle, AlertTriangle, CheckCircle2, ShieldCheck, Layers, RefreshCw, Users,
   Calendar, ChevronLeft, ChevronRight, CalendarDays, Loader2, Lock, Settings, X,
   Activity, Shield, Package, MessageSquare, Info, LayoutGrid, List,
-  Upload, Download, FileSpreadsheet, FileUp, Copy, Check
+  Upload, Download, FileSpreadsheet, FileUp, Copy, Check, Building2, History
 } from 'lucide-react';
 import { api } from '../services/api';
 import { InfluencerTransaction, Brand, Employee, PaymentLogItem, TargetItem, TeamTargetBreakdown, MemberTargetItem, AuditLogItem } from '../types';
@@ -410,13 +410,45 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const currentEmpObj = employees.find(e => {
+    if (!currentUser) return false;
+    const cId = currentUser.id || currentUser._id;
+    const cEmpId = currentUser.employeeId;
+    const cEmail = currentUser.email?.toLowerCase();
+    const cName = currentUser.name?.toLowerCase();
+    return (
+      (cId && e._id === cId) ||
+      (cEmpId && e.employeeId === cEmpId) ||
+      (cEmail && e.email?.toLowerCase() === cEmail) ||
+      (cName && e.name.toLowerCase() === cName)
+    );
+  });
+
+  // User permissions & capability detection
+  const userPerms: string[] = currentUser?.permissions || [];
+  const effectiveRole = userRole || currentUser?.role || '';
+  const userRoleStr = effectiveRole.toLowerCase();
+  const isSuperOrAdmin = effectiveRole === 'Super Admin' || effectiveRole === 'Admin' || effectiveRole === 'Marketing Manager' || effectiveRole === 'Assistant Manager' || effectiveRole === 'Assistant Marketing Manager' || effectiveRole === 'Team Leader';
+  const isBarterExec = userRoleStr.includes('barter') || (currentEmpObj?.role && currentEmpObj.role.toLowerCase().includes('barter')) || (currentEmpObj?.designation && currentEmpObj.designation.toLowerCase().includes('barter'));
+  const isPaidExec = userRoleStr.includes('paid') || (currentEmpObj?.role && currentEmpObj.role.toLowerCase().includes('paid')) || (currentEmpObj?.designation && currentEmpObj.designation.toLowerCase().includes('paid'));
+  const isPostingExec = userRoleStr.includes('posting') || (currentEmpObj?.role && currentEmpObj.role.toLowerCase().includes('posting')) || (currentEmpObj?.designation && currentEmpObj.designation.toLowerCase().includes('posting'));
+
+  const canViewPaid = isSuperOrAdmin || isPaidExec || (!isBarterExec && !isPostingExec && (userPerms.includes('influencer.paid.view') || userPerms.includes('influencer.view') || effectiveRole === 'Employee'));
+  const canViewBarter = isSuperOrAdmin || isBarterExec || (!isPaidExec && !isPostingExec && (userPerms.includes('influencer.barter.view') || userPerms.includes('influencer.view') || effectiveRole === 'Employee'));
+  const canViewPayments = isSuperOrAdmin || (!isBarterExec && !isPostingExec && (userPerms.includes('influencer.payment.view') || isPaidExec || effectiveRole === 'Employee'));
+  const canViewAll = isSuperOrAdmin || (canViewPaid && canViewBarter);
+
   // Tab View Mode State
   const mapInitialTab = (tab: string) => {
+    if (isBarterExec) return 'Barter Collaborations';
+    if (isPaidExec) return 'Paid Collaborations';
     if (tab === 'targets') return 'Targets & Goals';
-    if (tab === 'barter') return 'Barter Collaborations';
-    if (tab === 'payments') return 'Payment Audit Logs';
-    if (tab === 'all') return 'All Collaborations';
-    return 'Paid Collaborations';
+    if (tab === 'barter' && canViewBarter) return 'Barter Collaborations';
+    if (tab === 'payments' && canViewPayments) return 'Payment Audit Logs';
+    if (tab === 'all' && canViewAll) return 'All Collaborations';
+    if (canViewPaid) return 'Paid Collaborations';
+    if (canViewBarter) return 'Barter Collaborations';
+    return 'Targets & Goals';
   };
 
   const [viewMode, setViewMode] = useState<'Targets & Goals' | 'Paid Collaborations' | 'Barter Collaborations' | 'Payment Audit Logs' | 'User Activity Logs' | 'All Collaborations'>(mapInitialTab(initialTab));
@@ -543,8 +575,10 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
   const isAssistantManager = userRole === 'Assistant Manager' || userRole === 'Assistant Marketing Manager' || (!!userRole && userRole.toLowerCase().includes('assistant'));
   const isManagerOrAdmin = userRole === 'Super Admin' || userRole === 'Admin' || userRole === 'Marketing Manager' || userRole === 'Manager' || isAssistantManager || userRole === 'Team Leader';
   const isTargetManager = (userRole === 'Super Admin' || userRole === 'Admin' || userRole === 'Marketing Manager' || userRole === 'Manager') && !isAssistantManager;
-  const isTargetEmployee = userRole === 'Employee' || isAssistantManager;
-  const isEmployee = userRole === 'Employee';
+  const isManagementRole = !!userRole && (userRole.toLowerCase().includes('admin') || userRole.toLowerCase().includes('manager'));
+  const isEmployee = !isManagementRole;
+
+  const isTargetEmployee = (userRole === 'Employee' || isAssistantManager || isBarterExec || isPaidExec) && !isTargetManager;
 
   const myMember = (teamBreakdown?.members || []).find(m => {
     if (!currentUser) return false;
@@ -559,7 +593,30 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
       (m.employee.email && cEmail && m.employee.email.toLowerCase() === cEmail) ||
       (m.employee.name && cName && m.employee.name.toLowerCase() === cName)
     );
-  }) || (teamBreakdown?.members || [])[0];
+  }) || (teamBreakdown?.members || [])[0] || (currentEmpObj ? {
+    employee: {
+      id: currentEmpObj._id,
+      employeeId: currentEmpObj.employeeId || 'EMP',
+      name: currentEmpObj.name,
+      email: currentEmpObj.email,
+      designation: currentEmpObj.designation || 'Executive',
+      assignedBrandsCount: brands.length
+    },
+    individualTarget: 120000,
+    individualBarterTarget: 300,
+    barterAchievedPercent: 0,
+    netMargin: 0,
+    targetAchievedPercent: 0,
+    targetTier: '0%',
+    targetIncentivePercentage: 0,
+    targetIncentiveAmount: 0,
+    qualifyingBonusDealsCount: 0,
+    orderBonusAmount: 0,
+    totalTakeHomeIncentive: 0,
+    barterCount: 0,
+    paidCount: 0,
+    assignedBrands: []
+  } : null);
 
   const displayedMembers = isEmployee
     ? (myMember ? [myMember] : (teamBreakdown?.members || []).slice(0, 1))
@@ -1066,7 +1123,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
     } else {
       fetchInfluencers();
     }
-  }, [activeCategory, timeframe, currentDate, viewMode, filterCompletedStartDate, filterCompletedEndDate, selectedPayLogType, logFilterUser, logFilterRole, logFilterModule, logFilterAction, logSearchTerm]);
+  }, [activeCategory, timeframe, currentDate, viewMode, filterCompletedStartDate, filterCompletedEndDate, selectedPayLogType, searchTerm, logFilterUser, logFilterRole, logFilterModule, logFilterAction, logSearchTerm]);
 
   // Target Action Handlers
   const handleOpenCreateTargetModal = (defaultType: 'Paid' | 'Barter' = 'Paid') => {
@@ -1953,9 +2010,13 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
             <Sparkles size={22} />
           </div>
           <div>
-            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Influencer & Revenue Management</h2>
+            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+              {isBarterExec ? 'Barter Collaborations & Goals' : 'Influencer & Revenue Management'}
+            </h2>
             <p className="text-xs font-semibold text-slate-500 mt-0.5">
-              Paid Collaboration Profit Margins, Barter Collaboration Count Goals, and Complete Payment In/Out Ledger.
+              {isBarterExec
+                ? 'Assigned Barter Brands, Collaboration Quotas, and Monthly Deliverables Execution.'
+                : 'Paid Collaboration Profit Margins, Barter Collaboration Count Goals, and Complete Payment In/Out Ledger.'}
             </p>
           </div>
         </div>
@@ -2007,72 +2068,80 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
             <span className={`px-2 py-0.5 text-[10px] rounded-full font-black ${
               viewMode === 'Targets & Goals' ? 'bg-white/20 text-white' : 'bg-purple-100 text-purple-700'
             }`}>
-              {targets.length}
+              {isBarterExec ? targets.filter(t => t.targetType === 'Barter').length : targets.length}
             </span>
           </button>
 
-          <button
-            onClick={() => setViewMode('Paid Collaborations')}
-            className={`px-4 py-2.5 rounded-xl font-extrabold text-xs flex items-center space-x-2 transition ${
-              viewMode === 'Paid Collaborations'
-                ? 'bg-purple-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-bold'
-            }`}
-          >
-            <DollarSign size={15} />
-            <span>Paid Collaborations</span>
-            <span className={`px-2 py-0.5 text-[10px] rounded-full font-black ${
-              viewMode === 'Paid Collaborations' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
-            }`}>
-              {tabCounts.paid || 0}
-            </span>
-          </button>
+          {canViewPaid && (
+            <button
+              onClick={() => setViewMode('Paid Collaborations')}
+              className={`px-4 py-2.5 rounded-xl font-extrabold text-xs flex items-center space-x-2 transition ${
+                viewMode === 'Paid Collaborations'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-bold'
+              }`}
+            >
+              <DollarSign size={15} />
+              <span>Paid Collaborations</span>
+              <span className={`px-2 py-0.5 text-[10px] rounded-full font-black ${
+                viewMode === 'Paid Collaborations' ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-800'
+              }`}>
+                {tabCounts.paid || 0}
+              </span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setViewMode('Barter Collaborations')}
-            className={`px-4 py-2.5 rounded-xl font-extrabold text-xs flex items-center space-x-2 transition ${
-              viewMode === 'Barter Collaborations'
-                ? 'bg-purple-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-bold'
-            }`}
-          >
-            <ShoppingBag size={15} />
-            <span>Barter Collaborations</span>
-            <span className={`px-2 py-0.5 text-[10px] rounded-full font-black ${
-              viewMode === 'Barter Collaborations' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
-            }`}>
-              {tabCounts.barter || 0}
-            </span>
-          </button>
+          {canViewBarter && (
+            <button
+              onClick={() => setViewMode('Barter Collaborations')}
+              className={`px-4 py-2.5 rounded-xl font-extrabold text-xs flex items-center space-x-2 transition ${
+                viewMode === 'Barter Collaborations'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-bold'
+              }`}
+            >
+              <ShoppingBag size={15} />
+              <span>Barter Collaborations</span>
+              <span className={`px-2 py-0.5 text-[10px] rounded-full font-black ${
+                viewMode === 'Barter Collaborations' ? 'bg-white/20 text-white' : 'bg-blue-100 text-blue-800'
+              }`}>
+                {tabCounts.barter || 0}
+              </span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setViewMode('Payment Audit Logs')}
-            className={`px-4 py-2.5 rounded-xl font-extrabold text-xs flex items-center space-x-2 transition ${
-              viewMode === 'Payment Audit Logs'
-                ? 'bg-purple-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-bold'
-            }`}
-          >
-            <Receipt size={15} />
-            <span>Payment Audit Logs</span>
-          </button>
+          {canViewPayments && (
+            <button
+              onClick={() => setViewMode('Payment Audit Logs')}
+              className={`px-4 py-2.5 rounded-xl font-extrabold text-xs flex items-center space-x-2 transition ${
+                viewMode === 'Payment Audit Logs'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-bold'
+              }`}
+            >
+              <Receipt size={15} />
+              <span>Payment Audit Logs</span>
+            </button>
+          )}
 
-          <button
-            onClick={() => setViewMode('All Collaborations')}
-            className={`px-4 py-2.5 rounded-xl font-extrabold text-xs flex items-center space-x-2 transition ${
-              viewMode === 'All Collaborations'
-                ? 'bg-purple-600 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-bold'
-            }`}
-          >
-            <Layers size={15} />
-            <span>All Records</span>
-            <span className={`px-2 py-0.5 text-[10px] rounded-full font-black ${
-              viewMode === 'All Collaborations' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
-            }`}>
-              {tabCounts.all || ((tabCounts.paid || 0) + (tabCounts.barter || 0))}
-            </span>
-          </button>
+          {canViewAll && (
+            <button
+              onClick={() => setViewMode('All Collaborations')}
+              className={`px-4 py-2.5 rounded-xl font-extrabold text-xs flex items-center space-x-2 transition ${
+                viewMode === 'All Collaborations'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 font-bold'
+              }`}
+            >
+              <Layers size={15} />
+              <span>All Records</span>
+              <span className={`px-2 py-0.5 text-[10px] rounded-full font-black ${
+                viewMode === 'All Collaborations' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-700'
+              }`}>
+                {tabCounts.all || ((tabCounts.paid || 0) + (tabCounts.barter || 0))}
+              </span>
+            </button>
+          )}
         </div>
 
         {/* Global Filters with Modern Visual Calendar Picker */}
@@ -2101,73 +2170,130 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
         <div className="space-y-6">
           {/* 1. Executive Summary Targets Grid (2 Clean Modern Cards) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Card 1: Paid Revenue & Margin Target */}
-            <div className="bg-gradient-to-br from-white via-emerald-50/20 to-white rounded-3xl p-5 border border-emerald-200/80 shadow-xs flex flex-col justify-between space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold border border-emerald-200 shadow-2xs">
-                    <DollarSign size={20} />
+            {/* Card 1: Paid Revenue & Margin Target (Shown only for Paid / Management roles) OR Barter Portfolio Overview (For Barter Executives) */}
+            {isBarterExec ? (
+              <div className="bg-gradient-to-br from-white via-indigo-50/20 to-white rounded-3xl p-5 border border-indigo-200/80 shadow-xs flex flex-col justify-between space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold border border-indigo-200 shadow-2xs">
+                      <Building2 size={20} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-indigo-800 bg-indigo-100/80 px-2 py-0.5 rounded-md">
+                        Assigned Barter Portfolio
+                      </span>
+                      <h3 className="text-base font-black text-slate-900 mt-0.5">
+                        Active Barter Brands Pipeline
+                      </h3>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md">
-                      {isTargetEmployee ? 'Personal Paid Margin Goal' : 'Team Paid Margin Target'}
-                    </span>
-                    <h3 className="text-base font-black text-slate-900 mt-0.5">
-                      {isTargetEmployee ? 'Monthly Quota: ₹1,20,000' : (activePaidTarget ? activePaidTarget.title : 'Monthly Revenue Target')}
-                    </h3>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2">
                   <span className="text-[11px] font-bold text-slate-500 bg-white px-2.5 py-1 rounded-xl border border-slate-200 shadow-2xs">
-                    {activePaidTarget ? activePaidTarget.period : `${currentDate.toLocaleString('default', { month: 'long' })} ${currentDate.getFullYear()}`}
+                    {myMember?.assignedBrands?.length || myMember?.employee?.assignedBrandsCount || 30} Brands
                   </span>
-                  {isTargetManager && activePaidTarget && (
-                    <button
-                      onClick={() => handleOpenEditTargetModal(activePaidTarget)}
-                      className="p-1.5 bg-white hover:bg-slate-50 text-slate-600 hover:text-purple-700 border border-slate-200 rounded-xl transition shadow-2xs cursor-pointer"
-                      title="Edit Paid Target"
-                    >
-                      <Edit2 size={13} />
-                    </button>
-                  )}
                 </div>
-              </div>
 
-              {/* Numbers Overview */}
-              <div className="grid grid-cols-2 gap-3 pt-1">
-                <div className="bg-white/80 p-3 rounded-2xl border border-slate-200/80 shadow-2xs">
-                  <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Target Margin</p>
-                  <p className="text-xl font-black text-slate-900 mt-0.5">
-                    {isTargetManager ? `₹${new Intl.NumberFormat().format(paidGoal)}` : '₹1,20,000'}
-                  </p>
+                {/* Numbers Overview */}
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div className="bg-white/80 p-3 rounded-2xl border border-slate-200/80 shadow-2xs">
+                    <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Assigned Brands</p>
+                    <p className="text-xl font-black text-slate-900 mt-0.5">
+                      {myMember?.assignedBrands?.length || myMember?.employee?.assignedBrandsCount || 30} <span className="text-xs font-bold text-slate-400">Brands</span>
+                    </p>
+                  </div>
+                  <div className="bg-indigo-50/80 p-3 rounded-2xl border border-indigo-200/80 shadow-2xs">
+                    <p className="text-[10px] font-extrabold text-indigo-800 uppercase tracking-wider">Avg Quota / Brand</p>
+                    <p className="text-xl font-black text-indigo-700 mt-0.5">
+                      ~7–8 <span className="text-xs font-bold text-slate-400">Deals/Mo</span>
+                    </p>
+                  </div>
                 </div>
-                <div className="bg-emerald-50/80 p-3 rounded-2xl border border-emerald-200/80 shadow-2xs">
-                  <p className="text-[10px] font-extrabold text-emerald-800 uppercase tracking-wider">Achieved Margin</p>
-                  <p className="text-xl font-black text-emerald-700 mt-0.5">
-                    {isTargetManager ? `₹${new Intl.NumberFormat().format(paidAchieved)}` : `₹${new Intl.NumberFormat().format(myMember?.netMargin || 0)}`}
-                  </p>
-                </div>
-              </div>
 
-              {/* Progress Bar */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between text-xs font-black">
-                  <span className="text-emerald-700 flex items-center gap-1">
-                    <TrendingUp size={13} /> {paidPct}% Progress
-                  </span>
-                  <span className="text-slate-500 text-[11px] font-bold">
-                    {isTargetManager ? `Remaining: ₹${new Intl.NumberFormat().format(Math.max(0, paidGoal - paidAchieved))}` : `${myMember?.targetAchievedPercent || 0}% Met`}
-                  </span>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden p-0.5 border border-slate-200/60">
-                  <div
-                    className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full rounded-full transition-all duration-500 shadow-xs"
-                    style={{ width: `${Math.min(100, Math.max(paidPct, 0))}%` }}
-                  />
+                {/* Deliverables Info */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-black">
+                    <span className="text-indigo-700 flex items-center gap-1">
+                      <Sparkles size={13} /> Deliverables: Reels, Stories & Reviews
+                    </span>
+                    <span className="text-slate-500 text-[11px] font-bold">
+                      100% Barter Operations
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden p-0.5 border border-slate-200/60">
+                    <div
+                      className="bg-gradient-to-r from-indigo-500 to-purple-500 h-full rounded-full transition-all duration-500 shadow-xs"
+                      style={{ width: `${Math.min(100, Math.max(barterPct, 15))}%` }}
+                    />
+                  </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="bg-gradient-to-br from-white via-emerald-50/20 to-white rounded-3xl p-5 border border-emerald-200/80 shadow-xs flex flex-col justify-between space-y-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold border border-emerald-200 shadow-2xs">
+                      <DollarSign size={20} />
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded-md">
+                        {isTargetEmployee ? 'Personal Paid Margin Goal' : 'Team Paid Margin Target'}
+                      </span>
+                      <h3 className="text-base font-black text-slate-900 mt-0.5">
+                        {isTargetEmployee ? 'Monthly Quota: ₹1,20,000' : (activePaidTarget ? activePaidTarget.title : 'Monthly Revenue Target')}
+                      </h3>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-bold text-slate-500 bg-white px-2.5 py-1 rounded-xl border border-slate-200 shadow-2xs">
+                      {activePaidTarget ? activePaidTarget.period : `${currentDate.toLocaleString('default', { month: 'long' })} ${currentDate.getFullYear()}`}
+                    </span>
+                    {isTargetManager && activePaidTarget && (
+                      <button
+                        onClick={() => handleOpenEditTargetModal(activePaidTarget)}
+                        className="p-1.5 bg-white hover:bg-slate-50 text-slate-600 hover:text-purple-700 border border-slate-200 rounded-xl transition shadow-2xs cursor-pointer"
+                        title="Edit Paid Target"
+                      >
+                        <Edit2 size={13} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Numbers Overview */}
+                <div className="grid grid-cols-2 gap-3 pt-1">
+                  <div className="bg-white/80 p-3 rounded-2xl border border-slate-200/80 shadow-2xs">
+                    <p className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">Target Margin</p>
+                    <p className="text-xl font-black text-slate-900 mt-0.5">
+                      {isTargetManager ? `₹${new Intl.NumberFormat().format(paidGoal)}` : '₹1,20,000'}
+                    </p>
+                  </div>
+                  <div className="bg-emerald-50/80 p-3 rounded-2xl border border-emerald-200/80 shadow-2xs">
+                    <p className="text-[10px] font-extrabold text-emerald-800 uppercase tracking-wider">Achieved Margin</p>
+                    <p className="text-xl font-black text-emerald-700 mt-0.5">
+                      {isTargetManager ? `₹${new Intl.NumberFormat().format(paidAchieved)}` : `₹${new Intl.NumberFormat().format(myMember?.netMargin || 0)}`}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Progress Bar */}
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-xs font-black">
+                    <span className="text-emerald-700 flex items-center gap-1">
+                      <TrendingUp size={13} /> {paidPct}% Progress
+                    </span>
+                    <span className="text-slate-500 text-[11px] font-bold">
+                      {isTargetManager ? `Remaining: ₹${new Intl.NumberFormat().format(Math.max(0, paidGoal - paidAchieved))}` : `${myMember?.targetAchievedPercent || 0}% Met`}
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden p-0.5 border border-slate-200/60">
+                    <div
+                      className="bg-gradient-to-r from-emerald-500 to-teal-500 h-full rounded-full transition-all duration-500 shadow-xs"
+                      style={{ width: `${Math.min(100, Math.max(paidPct, 0))}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Card 2: Barter Collabs Volume Goal */}
             <div className="bg-gradient-to-br from-white via-purple-50/20 to-white rounded-3xl p-5 border border-purple-200/80 shadow-xs flex flex-col justify-between space-y-4">
@@ -2238,34 +2364,59 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
             </div>
           </div>
 
-          {/* 2. Commission Slabs Quick Pill Bar */}
-          <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 p-3.5 rounded-2xl border border-purple-200/80 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xs">
-            <div className="flex items-center gap-2.5 text-xs text-slate-800 font-bold">
-              <span className="w-7 h-7 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-xs">
-                <Award size={15} />
-              </span>
-              <span>
-                <strong>Incentive Slabs:</strong> Tier 1 (10% on ₹1L+ Margin) • Tier 2 (5% on ₹80k+ Margin) • Viral Video (+10% Bonus on 100+ orders)
-              </span>
+          {/* 2. Banner: Barter Collaboration Guidelines (for Barter Exec) or Incentive Slabs (for Paid Exec / Management) */}
+          {isBarterExec ? (
+            <div className="bg-gradient-to-r from-purple-50 via-pink-50 to-indigo-50 p-3.5 rounded-2xl border border-purple-200/80 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-center gap-2.5 text-xs text-slate-800 font-bold">
+                <span className="w-7 h-7 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <ShoppingBag size={15} />
+                </span>
+                <span>
+                  <strong>Barter Execution Mandate:</strong> 7–8 collaborations per brand/month • Deliverables: Reel, Story & Product Reviews • Timely Logistics Tracking
+                </span>
+              </div>
+              <button
+                onClick={() => setViewMode('Barter Collaborations')}
+                className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-purple-100 text-purple-700 border border-purple-200 font-extrabold text-xs transition shadow-2xs shrink-0 flex items-center gap-1.5 cursor-pointer"
+              >
+                <ShoppingBag size={13} /> View Barter Deals
+              </button>
             </div>
-            <button
-              onClick={() => setIsSlabsModalOpen(true)}
-              className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-purple-100 text-purple-700 border border-purple-200 font-extrabold text-xs transition shadow-2xs shrink-0 flex items-center gap-1.5 cursor-pointer"
-            >
-              <Info size={13} /> View Slab Details & Rules
-            </button>
-          </div>
+          ) : (
+            <div className="bg-gradient-to-r from-purple-50 via-indigo-50 to-blue-50 p-3.5 rounded-2xl border border-purple-200/80 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xs">
+              <div className="flex items-center gap-2.5 text-xs text-slate-800 font-bold">
+                <span className="w-7 h-7 rounded-xl bg-purple-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                  <Award size={15} />
+                </span>
+                <span>
+                  <strong>Incentive Slabs:</strong> Tier 1 (10% on ₹1L+ Margin) • Tier 2 (5% on ₹80k+ Margin) • Viral Video (+10% Bonus on 100+ orders)
+                </span>
+              </div>
+              <button
+                onClick={() => setIsSlabsModalOpen(true)}
+                className="px-3.5 py-1.5 rounded-xl bg-white hover:bg-purple-100 text-purple-700 border border-purple-200 font-extrabold text-xs transition shadow-2xs shrink-0 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Info size={13} /> View Slab Details & Rules
+              </button>
+            </div>
+          )}
 
           {/* 3. Team Quota & Performance Section (Searchable Table & Card View with Server Pagination) */}
           <div className="bg-white rounded-3xl border border-slate-200/90 shadow-sm p-5 space-y-4">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
                 <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                  <Users size={18} className="text-purple-600" />
-                  {isEmployee ? 'My Monthly Quota & Performance' : 'Team Member Quotas & Performance'}
+                  <ShoppingBag size={18} className="text-purple-600" />
+                  {isBarterExec
+                    ? 'My Assigned Brands Barter Quota & Performance'
+                    : isEmployee
+                    ? 'My Monthly Quota & Performance'
+                    : 'Team Member Quotas & Performance'}
                 </h3>
                 <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                  {isEmployee
+                  {isBarterExec
+                    ? 'Your assigned barter brand portfolio, monthly collaboration quotas, and achieved deal counts.'
+                    : isEmployee
                     ? 'Your auto-calculated quota, achieved margins, slab eligibility, and calculated take-home.'
                     : `Tracking quota, live margin progress, and commission eligibility for ${teamTotalItems || teamBreakdown?.members?.length || 0} executive(s).`}
                 </p>
@@ -2330,111 +2481,285 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
               <div className="py-12">
                 <InlineLoader message="Loading team performance quotas..." />
               </div>
-            ) : !teamBreakdown?.members || teamBreakdown.members.length === 0 ? (
+            ) : (!displayedMembers || displayedMembers.length === 0) ? (
               <div className="py-12 text-center text-slate-400 text-xs font-semibold">
                 No team members found{teamSearchQuery ? ` matching "${teamSearchQuery}"` : ''}.
               </div>
             ) : teamViewMode === 'table' ? (
               <div className="overflow-x-auto rounded-2xl border border-slate-200">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-800 text-slate-200 font-bold">
-                      <th className="p-3 text-center w-12 border-b border-r border-slate-700">S.No</th>
-                      <th className="p-3 border-b border-r border-slate-700">Executive</th>
-                      <th className="p-3 border-b border-r border-slate-700">Paid Margin & Goal</th>
-                      <th className="p-3 border-b border-r border-slate-700 text-center">Barter Deals</th>
-                      <th className="p-3 border-b border-r border-slate-700 text-center">Incentive Slab</th>
-                      <th className="p-3 border-b border-r border-slate-700 text-right">Take-Home Bonus</th>
-                      <th className="p-3 border-b border-slate-700 text-center">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-semibold text-slate-800 bg-white">
-                    {teamBreakdown.members.map((m, idx) => {
-                      const isTier1 = m.targetTier === '10%';
-                      const isTier2 = m.targetTier === '5%';
-                      const serialNo = (teamPage - 1) * teamLimit + idx + 1;
+                {isBarterExec ? (
+                  /* PURE BARTER TABLE FOR BARTER COLLAB EXECUTIVE */
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-800 text-slate-200 font-bold">
+                        <th className="p-3 text-center w-12 border-b border-r border-slate-700">S.No</th>
+                        <th className="p-3 border-b border-r border-slate-700">Executive</th>
+                        <th className="p-3 border-b border-r border-slate-700 text-center">Assigned Brands</th>
+                        <th className="p-3 border-b border-r border-slate-700 text-center">Monthly Barter Goal</th>
+                        <th className="p-3 border-b border-r border-slate-700 text-center">Achieved Deals</th>
+                        <th className="p-3 border-b border-r border-slate-700 text-center">Remaining Deals</th>
+                        <th className="p-3 border-b border-r border-slate-700">Completion Progress</th>
+                        <th className="p-3 border-b border-r border-slate-700 text-center">Status</th>
+                        <th className="p-3 border-b border-slate-700 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-semibold text-slate-800 bg-white">
+                      {displayedMembers.map((m, idx) => {
+                        const serialNo = (teamPage - 1) * teamLimit + idx + 1;
+                        const brandCount = m.assignedBrands?.length || m.employee.assignedBrandsCount || 30;
+                        const bGoal = m.individualBarterTarget || barterGoal || (brandCount * 7.5);
+                        const bAchieved = m.barterCount !== undefined ? m.barterCount : barterAchieved;
+                        const bRemaining = Math.max(0, bGoal - bAchieved);
+                        const bPct = bGoal > 0 ? Math.min(100, Math.round((bAchieved / bGoal) * 100)) : 0;
+                        const isComplete = bPct >= 100;
+                        const isOnTrack = bPct >= 50;
 
-                      return (
-                        <tr key={m.employee.id} className="hover:bg-purple-50/40 transition">
-                          <td className="p-3 text-center font-bold text-slate-400 border-r border-slate-100">
-                            {serialNo}
-                          </td>
-                          <td className="p-3 border-r border-slate-100">
-                            <div className="flex items-center space-x-2.5">
-                              <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center font-extrabold text-xs shadow-2xs shrink-0">
-                                {m.employee.name.charAt(0).toUpperCase()}
-                              </div>
-                              <div>
-                                <div className="font-extrabold text-slate-900 text-xs">{m.employee.name}</div>
-                                <div className="text-[10px] text-slate-500 font-medium">
-                                  <span className="font-bold text-purple-700">{m.employee.employeeId}</span> • {m.employee.assignedBrandsCount} Brands
+                        return (
+                          <tr key={m.employee.id} className="hover:bg-purple-50/40 transition">
+                            <td className="p-3 text-center font-bold text-slate-400 border-r border-slate-100">
+                              {serialNo}
+                            </td>
+                            <td className="p-3 border-r border-slate-100">
+                              <div className="flex items-center space-x-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center font-extrabold text-xs shadow-2xs shrink-0">
+                                  {m.employee.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="font-extrabold text-slate-900 text-xs">{m.employee.name}</div>
+                                  <div className="text-[10px] text-slate-500 font-medium">
+                                    <span className="font-bold text-purple-700">{m.employee.employeeId}</span> • Barter Collab Executive
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </td>
-                          <td className="p-3 border-r border-slate-100 min-w-[180px]">
-                            <div className="space-y-1">
-                              <div className="flex justify-between text-[11px] font-bold">
-                                <span className="text-slate-900 font-extrabold">
-                                  ₹{new Intl.NumberFormat().format(m.netMargin)}
-                                </span>
-                                <span className="text-purple-600 text-[10px]">
-                                  {m.targetAchievedPercent}% of ₹1.2L
-                                </span>
+                            </td>
+                            <td className="p-3 border-r border-slate-100 text-center">
+                              <button
+                                onClick={() => {
+                                  setSelectedMemberForDetail(m);
+                                  setDetailActiveTab('brands');
+                                }}
+                                className="px-2.5 py-1 rounded-full text-xs font-black bg-purple-100 hover:bg-purple-200 text-purple-800 border border-purple-200 transition cursor-pointer"
+                                title="Click to view assigned brands"
+                              >
+                                {brandCount} Brands
+                              </button>
+                            </td>
+                            <td className="p-3 border-r border-slate-100 text-center font-extrabold text-slate-900">
+                              {bGoal} <span className="text-[10px] text-slate-400 font-bold">Deals</span>
+                            </td>
+                            <td className="p-3 border-r border-slate-100 text-center font-black text-purple-700">
+                              {bAchieved} <span className="text-[10px] text-slate-400 font-bold">Done</span>
+                            </td>
+                            <td className="p-3 border-r border-slate-100 text-center font-bold text-slate-600">
+                              {bRemaining} <span className="text-[10px] text-slate-400 font-bold">Deals</span>
+                            </td>
+                            <td className="p-3 border-r border-slate-100 min-w-[150px]">
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-[11px] font-bold">
+                                  <span className="text-purple-700 font-extrabold">{bPct}%</span>
+                                  <span className="text-slate-500 text-[10px]">{bAchieved}/{bGoal}</span>
+                                </div>
+                                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                                  <div
+                                    className="bg-gradient-to-r from-purple-600 to-indigo-500 h-full rounded-full transition-all duration-300"
+                                    style={{ width: `${Math.min(100, Math.max(bPct, 0))}%` }}
+                                  />
+                                </div>
                               </div>
-                              <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                                <div
-                                  className="bg-gradient-to-r from-purple-600 to-emerald-500 h-full rounded-full transition-all duration-300"
-                                  style={{ width: `${Math.min(100, Math.max(m.targetAchievedPercent, 0))}%` }}
-                                />
-                              </div>
-                            </div>
-                          </td>
-                          <td className="p-3 border-r border-slate-100 text-center">
-                            <span className="font-extrabold text-slate-800">
-                              {m.barterCount} / {m.individualBarterTarget || 0}
-                            </span>
-                            <span className="block text-[10px] text-purple-600 font-bold">
-                              {m.barterAchievedPercent || 0}% Done
-                            </span>
-                          </td>
-                          <td className="p-3 border-r border-slate-100 text-center">
-                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${
-                              isTier1 ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : isTier2 ? 'bg-blue-100 text-blue-800 border-blue-300' : 'bg-slate-100 text-slate-600 border-slate-200'
-                            }`}>
-                              {isTier1 ? '🏆 10% Slab' : isTier2 ? '🥈 5% Slab' : '0% Slab'}
-                            </span>
-                          </td>
-                          <td className="p-3 border-r border-slate-100 text-right">
-                            <span className="font-black text-emerald-600 text-xs">
-                              ₹{new Intl.NumberFormat().format(m.totalTakeHomeIncentive)}
-                            </span>
-                            {m.qualifyingBonusDealsCount > 0 && (
-                              <span className="block text-[9px] text-amber-700 font-bold">
-                                +{m.qualifyingBonusDealsCount} viral deal(s)
+                            </td>
+                            <td className="p-3 border-r border-slate-100 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${
+                                isComplete ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : isOnTrack ? 'bg-blue-100 text-blue-800 border-blue-300' : 'bg-amber-100 text-amber-800 border-amber-300'
+                              }`}>
+                                {isComplete ? 'Completed' : isOnTrack ? 'On Track' : 'In Progress'}
                               </span>
-                            )}
-                          </td>
-                          <td className="p-3 text-center">
-                            <button
-                              onClick={() => {
-                                setSelectedMemberForDetail(m);
-                                setDetailActiveTab('overview');
-                              }}
-                              className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 font-extrabold rounded-lg text-[11px] transition cursor-pointer border border-purple-200/80 shadow-2xs"
-                            >
-                              View Deals →
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                            </td>
+                            <td className="p-3 text-center">
+                              <button
+                                onClick={() => {
+                                  setSelectedMemberForDetail(m);
+                                  setDetailActiveTab('brands');
+                                }}
+                                className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 font-extrabold rounded-lg text-[11px] transition cursor-pointer border border-purple-200/80 shadow-2xs"
+                              >
+                                Brand Quotas →
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                ) : (
+                  /* STANDARD PAID & COMMISSION TABLE FOR PAID EXECUTIVES & MANAGEMENT */
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-800 text-slate-200 font-bold">
+                        <th className="p-3 text-center w-12 border-b border-r border-slate-700">S.No</th>
+                        <th className="p-3 border-b border-r border-slate-700">Executive</th>
+                        <th className="p-3 border-b border-r border-slate-700">Paid Margin & Goal</th>
+                        <th className="p-3 border-b border-r border-slate-700 text-center">Barter Deals</th>
+                        <th className="p-3 border-b border-r border-slate-700 text-center">Incentive Slab</th>
+                        <th className="p-3 border-b border-r border-slate-700 text-right">Take-Home Bonus</th>
+                        <th className="p-3 border-b border-slate-700 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-semibold text-slate-800 bg-white">
+                      {displayedMembers.map((m, idx) => {
+                        const isTier1 = m.targetTier === '10%';
+                        const isTier2 = m.targetTier === '5%';
+                        const serialNo = (teamPage - 1) * teamLimit + idx + 1;
+
+                        return (
+                          <tr key={m.employee.id} className="hover:bg-purple-50/40 transition">
+                            <td className="p-3 text-center font-bold text-slate-400 border-r border-slate-100">
+                              {serialNo}
+                            </td>
+                            <td className="p-3 border-r border-slate-100">
+                              <div className="flex items-center space-x-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center font-extrabold text-xs shadow-2xs shrink-0">
+                                  {m.employee.name.charAt(0).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div className="font-extrabold text-slate-900 text-xs">{m.employee.name}</div>
+                                  <div className="text-[10px] text-slate-500 font-medium">
+                                    <span className="font-bold text-purple-700">{m.employee.employeeId}</span> • {m.employee.assignedBrandsCount} Brands
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-3 border-r border-slate-100 min-w-[180px]">
+                              <div className="space-y-1">
+                                <div className="flex justify-between text-[11px] font-bold">
+                                  <span className="text-slate-900 font-extrabold">
+                                    ₹{new Intl.NumberFormat().format(m.netMargin)}
+                                  </span>
+                                  <span className="text-purple-600 text-[10px]">
+                                    {m.targetAchievedPercent}% of ₹1.2L
+                                  </span>
+                                </div>
+                                <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                                  <div
+                                    className="bg-gradient-to-r from-purple-600 to-emerald-500 h-full rounded-full transition-all duration-300"
+                                    style={{ width: `${Math.min(100, Math.max(m.targetAchievedPercent, 0))}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-3 border-r border-slate-100 text-center">
+                              <span className="font-extrabold text-slate-800">
+                                {m.barterCount} / {m.individualBarterTarget || 0}
+                              </span>
+                              <span className="block text-[10px] text-purple-600 font-bold">
+                                {m.barterAchievedPercent || 0}% Done
+                              </span>
+                            </td>
+                            <td className="p-3 border-r border-slate-100 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${
+                                isTier1 ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : isTier2 ? 'bg-blue-100 text-blue-800 border-blue-300' : 'bg-slate-100 text-slate-600 border-slate-200'
+                              }`}>
+                                {isTier1 ? '🏆 10% Slab' : isTier2 ? '🥈 5% Slab' : '0% Slab'}
+                              </span>
+                            </td>
+                            <td className="p-3 border-r border-slate-100 text-right">
+                              <span className="font-black text-emerald-600 text-xs">
+                                ₹{new Intl.NumberFormat().format(m.totalTakeHomeIncentive)}
+                              </span>
+                              {m.qualifyingBonusDealsCount > 0 && (
+                                <span className="block text-[9px] text-amber-700 font-bold">
+                                  +{m.qualifyingBonusDealsCount} viral deal(s)
+                                </span>
+                              )}
+                            </td>
+                            <td className="p-3 text-center">
+                              <button
+                                onClick={() => {
+                                  setSelectedMemberForDetail(m);
+                                  setDetailActiveTab('overview');
+                                }}
+                                className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-700 font-extrabold rounded-lg text-[11px] transition cursor-pointer border border-purple-200/80 shadow-2xs"
+                              >
+                                View Deals →
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            ) : isBarterExec ? (
+              /* PURE BARTER CARDS VIEW FOR BARTER COLLAB EXECUTIVE */
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {displayedMembers.map((m) => {
+                  const brandCount = m.assignedBrands?.length || m.employee.assignedBrandsCount || 30;
+                  const bGoal = m.individualBarterTarget || barterGoal || (brandCount * 7.5);
+                  const bAchieved = m.barterCount !== undefined ? m.barterCount : barterAchieved;
+                  const bRemaining = Math.max(0, bGoal - bAchieved);
+                  const bPct = bGoal > 0 ? Math.min(100, Math.round((bAchieved / bGoal) * 100)) : 0;
+                  const isComplete = bPct >= 100;
+                  const isOnTrack = bPct >= 50;
+
+                  return (
+                    <div
+                      key={m.employee.id}
+                      onClick={() => {
+                        setSelectedMemberForDetail(m);
+                        setDetailActiveTab('brands');
+                      }}
+                      className="p-4 bg-slate-50/80 hover:bg-white rounded-2xl border border-slate-200 hover:border-purple-400 hover:shadow-md transition-all cursor-pointer group space-y-3 relative overflow-hidden"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-2.5">
+                          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center font-extrabold text-sm shadow-xs group-hover:scale-105 transition-transform">
+                            {m.employee.name.charAt(0)}
+                          </div>
+                          <div>
+                            <h4 className="font-extrabold text-slate-900 text-xs group-hover:text-purple-700 transition-colors flex items-center gap-1">
+                              <span>{m.employee.name}</span>
+                              <ArrowUpRight size={12} className="text-slate-400 group-hover:text-purple-600 opacity-0 group-hover:opacity-100 transition" />
+                            </h4>
+                            <span className="text-[10px] text-purple-600 font-bold">{m.employee.employeeId} • Barter Collab Executive</span>
+                          </div>
+                        </div>
+
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${
+                          isComplete ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : isOnTrack ? 'bg-blue-100 text-blue-800 border-blue-300' : 'bg-amber-100 text-amber-800 border-amber-300'
+                        }`}>
+                          {isComplete ? 'Completed' : isOnTrack ? 'On Track' : 'In Progress'}
+                        </span>
+                      </div>
+
+                      {/* Progress Bar */}
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[11px] font-bold">
+                          <span className="text-slate-600">
+                            Barter Deals: <strong className="text-purple-700">{bAchieved} / {bGoal}</strong>
+                          </span>
+                          <span className="text-purple-600 font-extrabold">{bPct}% Completed</span>
+                        </div>
+                        <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                          <div
+                            className="bg-gradient-to-r from-purple-600 to-indigo-500 h-full rounded-full transition-all duration-500"
+                            style={{ width: `${bPct}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Brand Portfolio & Remaining Deals */}
+                      <div className="flex justify-between text-[10px] font-bold text-slate-500 pt-1 border-t border-slate-100">
+                        <span>Assigned Brands: <strong className="text-slate-900">{brandCount} Brands</strong></span>
+                        <span>Remaining: <strong className="text-purple-700">{bRemaining} Deals</strong></span>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             ) : (
+              /* STANDARD PAID CARDS VIEW */
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {teamBreakdown.members.map((m) => {
+                {displayedMembers.map((m) => {
                   const isTier1 = m.targetTier === '10%';
                   const isTier2 = m.targetTier === '5%';
 
@@ -2543,14 +2868,22 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 font-medium text-slate-800">
-                  {targets.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="p-6 text-center text-slate-400 font-semibold">
-                        No targets created yet. Click "+ Set Monthly Target" to get started.
-                      </td>
-                    </tr>
-                  ) : (
-                    targets.map((t) => {
+                  {(() => {
+                    const displayedTargets = isBarterExec
+                      ? targets.filter(t => t.targetType === 'Barter')
+                      : (isPaidExec ? targets.filter(t => t.targetType === 'Paid') : targets);
+
+                    if (displayedTargets.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={8} className="p-6 text-center text-slate-400 font-semibold">
+                            {isBarterExec ? 'No barter targets created yet.' : 'No targets created yet. Click "+ Set Monthly Target" to get started.'}
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return displayedTargets.map((t) => {
                       const isBarter = t.targetType === 'Barter';
                       const goalVal = isBarter 
                         ? (isTargetEmployee ? barterGoal : (t.targetCount || t.targetAmount))
@@ -2645,8 +2978,8 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                           </td>
                         </tr>
                       );
-                    })
-                  )}
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -3197,6 +3530,29 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                   <span>{isExporting ? 'Exporting...' : 'Export'}</span>
                 </button>
 
+                {/* Quick Toggle for All Previous Brand History vs Current Month */}
+                {timeframe === 'all' ? (
+                  <button
+                    type="button"
+                    onClick={() => setTimeframe(getCurrentMonthTimeframe())}
+                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-xs font-black flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                    title="Switch back to current month view"
+                  >
+                    <Calendar size={13} />
+                    <span>Viewing All Previous Collabs (Click for This Month)</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setTimeframe('all')}
+                    className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-black flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                    title="Show all previous collaboration records for your assigned brands across all time"
+                  >
+                    <History size={13} />
+                    <span>View All Previous Collabs (Lifetime)</span>
+                  </button>
+                )}
+
                 {viewMode === 'Barter Collaborations' && (
                   <div className="flex items-center gap-2 bg-purple-50/80 p-1.5 rounded-xl border border-purple-100">
                     <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 flex items-center gap-1">
@@ -3483,7 +3839,15 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                           <td className="p-3 border-r border-slate-100">
                             {item.influencerManager ? (
                               <>
-                                <div className="font-bold text-slate-800">{getCanonicalManagerName(item.influencerManager)}</div>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-bold text-slate-800">{getCanonicalManagerName(item.influencerManager)}</span>
+                                  {((currentUser?.name && item.influencerManager?.toLowerCase().includes(currentUser.name.toLowerCase())) ||
+                                    (currentEmpObj?.name && item.influencerManager?.toLowerCase().includes(currentEmpObj.name.toLowerCase()))) ? (
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">You</span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-100 text-slate-600 border border-slate-200" title="Previous / Alternate assignee for this brand">Past Assignee</span>
+                                  )}
+                                </div>
                                 {item.brandManagerTeam && (
                                   <div className="text-[10px] text-purple-700 font-extrabold block">Brand Manager: {item.brandManagerTeam}</div>
                                 )}
@@ -3842,16 +4206,41 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
         <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-4">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-3 border-b border-slate-100">
             <div>
-              <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <Receipt className="text-purple-600" size={20} />
-                Payment In/Out Audit Logs
-              </h3>
+              <div className="flex items-center gap-2">
+                <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                  <Receipt className="text-purple-600" size={20} />
+                  Payment In/Out Audit Logs
+                </h3>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-purple-100 text-purple-700">
+                  {paymentLogs.length} Records
+                </span>
+              </div>
               <p className="text-xs text-slate-500 font-semibold mt-0.5">
                 Exact log of all payments received from client brands (IN) and payouts disbursed to creators (OUT).
               </p>
             </div>
 
             <div className="flex items-center space-x-2">
+              {timeframe !== 'all' ? (
+                <button
+                  type="button"
+                  onClick={() => setTimeframe('all')}
+                  className="px-3 py-1.5 rounded-xl border border-slate-300 text-xs font-bold bg-white hover:bg-slate-50 text-slate-700 transition"
+                  title="View all records across all months"
+                >
+                  All Lifetime ({metrics.totalCount || paymentLogs.length})
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={handleCurrentMonth}
+                  className="px-3 py-1.5 rounded-xl border border-purple-300 text-xs font-extrabold bg-purple-50 hover:bg-purple-100 text-purple-700 transition"
+                  title="Switch to current month"
+                >
+                  Showing Lifetime (View Month)
+                </button>
+              )}
+
               <select
                 value={selectedPayLogType}
                 onChange={(e: any) => setSelectedPayLogType(e.target.value)}
@@ -3918,7 +4307,7 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                       <td className={`p-3 border-r border-slate-100 text-right font-black ${
                         log.type === 'IN' ? 'text-emerald-700' : 'text-rose-600'
                       }`}>
-                        {isManagerOrAdmin ? (
+                        {isManagerOrAdmin || isPaidExec ? (
                           `${log.type === 'IN' ? '+' : '-'}₹${new Intl.NumberFormat().format(log.amount)}`
                         ) : (
                           <span className="px-2.5 py-0.5 rounded-lg bg-purple-100 text-purple-800 text-xs font-black border border-purple-200">PAID</span>
@@ -4802,111 +5191,184 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
             {/* TAB 1: OVERVIEW & INCENTIVE BREAKDOWN */}
             {detailActiveTab === 'overview' && (
               <div className="space-y-4 pt-1">
-                {/* Quota Progress Meter */}
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
-                  <div className="flex justify-between items-center text-xs font-black">
-                    <span className="text-slate-700">Monthly Net Margin Paid Colab Progress</span>
-                    <span className="text-purple-700">
-                      ₹{new Intl.NumberFormat().format(selectedMemberForDetail.netMargin)} / ₹{new Intl.NumberFormat().format(selectedMemberForDetail.individualTarget)} ({selectedMemberForDetail.targetAchievedPercent}%)
-                    </span>
-                  </div>
-                  <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
-                    <div
-                      className="bg-gradient-to-r from-purple-600 via-indigo-600 to-emerald-500 h-full rounded-full transition-all duration-500"
-                      style={{ width: `${selectedMemberForDetail.targetAchievedPercent}%` }}
-                    />
-                  </div>
-                  <p className="text-[11px] text-slate-500 font-medium">
-                    {selectedMemberForDetail.targetAchievedPercent >= 100
-                      ? '🎉 Congratulations! Full ₹1,20,000 quota achieved. Qualified for 10% Incentive Slab.'
-                      : selectedMemberForDetail.netMargin >= 80000
-                        ? '🥈 5% Incentive Slab unlocked (₹80k+ threshold crossed). ₹' + new Intl.NumberFormat().format(100000 - selectedMemberForDetail.netMargin) + ' needed for 10% Slab.'
-                        : '⚡ ₹' + new Intl.NumberFormat().format(80000 - selectedMemberForDetail.netMargin) + ' more Net Margin needed to unlock the 5% Incentive Slab.'}
-                  </p>
-                </div>
+                {(isBarterExec || (selectedMemberForDetail.employee.designation || '').toLowerCase().includes('barter') || (selectedMemberForDetail.employee.role || '').toLowerCase().includes('barter')) ? (
+                  /* BARTER OVERVIEW IN MODAL */
+                  <div className="space-y-4">
+                    {/* Barter Quota Progress Meter */}
+                    <div className="bg-purple-50/60 p-4 rounded-2xl border border-purple-200/80 space-y-2">
+                      <div className="flex justify-between items-center text-xs font-black">
+                        <span className="text-purple-900 flex items-center gap-1.5">
+                          <ShoppingBag size={14} className="text-purple-600" />
+                          Monthly Barter Collabs Goal ({selectedMemberForDetail.assignedBrands?.length || selectedMemberForDetail.employee.assignedBrandsCount} Brands)
+                        </span>
+                        <span className="text-purple-700">
+                          {selectedMemberForDetail.barterCount} / {selectedMemberForDetail.individualBarterTarget || (selectedMemberForDetail.assignedBrands?.length || 30) * 7.5} Collabs ({selectedMemberForDetail.barterAchievedPercent || 0}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-purple-100 rounded-full h-3 overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-purple-500 to-indigo-600 h-full rounded-full transition-all duration-500"
+                          style={{ width: `${selectedMemberForDetail.barterAchievedPercent || 0}%` }}
+                        />
+                      </div>
+                      <p className="text-[10px] text-purple-700 font-medium">
+                        Auto-calculated from assigned brands quota (7B per Running Brand : 8B per New Brand).
+                      </p>
+                    </div>
 
-                {/* Barter Quota Progress Meter */}
-                {selectedMemberForDetail.individualBarterTarget !== undefined && selectedMemberForDetail.individualBarterTarget > 0 && (
-                  <div className="bg-purple-50/60 p-4 rounded-2xl border border-purple-200/80 space-y-2">
-                    <div className="flex justify-between items-center text-xs font-black">
-                      <span className="text-purple-900 flex items-center gap-1.5">
-                        <ShoppingBag size={14} className="text-purple-600" />
-                        Monthly Barter Collabs Goal ({selectedMemberForDetail.assignedBrands?.length || selectedMemberForDetail.employee.assignedBrandsCount} Brands)
-                      </span>
-                      <span className="text-purple-700">
-                        {selectedMemberForDetail.barterCount} / {selectedMemberForDetail.individualBarterTarget} Collabs ({selectedMemberForDetail.barterAchievedPercent || 0}%)
-                      </span>
+                    {/* 3 Barter Metric Cards */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Assigned Brands</span>
+                        <span className="text-base font-black text-slate-900 mt-0.5 block">
+                          {selectedMemberForDetail.assignedBrands?.length || selectedMemberForDetail.employee.assignedBrandsCount || 30} Brands
+                        </span>
+                        <span className="text-[10px] text-purple-700 font-semibold">Active Barter Portfolio</span>
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Monthly Target</span>
+                        <span className="text-base font-black text-purple-700 mt-0.5 block">
+                          {selectedMemberForDetail.individualBarterTarget || 228} Deals
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-semibold">7–8 Collabs / Brand</span>
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Achieved Deals</span>
+                        <span className="text-base font-black text-emerald-600 mt-0.5 block">
+                          {selectedMemberForDetail.barterCount || 0} Completed
+                        </span>
+                        <span className="text-[10px] text-emerald-700 font-semibold">{selectedMemberForDetail.barterAchievedPercent || 0}% Completed</span>
+                      </div>
                     </div>
-                    <div className="w-full bg-purple-100 rounded-full h-2.5 overflow-hidden">
-                      <div
-                        className="bg-gradient-to-r from-purple-500 to-indigo-600 h-full rounded-full transition-all duration-500"
-                        style={{ width: `${selectedMemberForDetail.barterAchievedPercent || 0}%` }}
-                      />
+
+                    {/* Barter Operations Mandate Banner */}
+                    <div className="p-4 bg-gradient-to-r from-purple-600 to-indigo-600 text-white rounded-2xl shadow-md flex items-center justify-between">
+                      <div>
+                        <span className="text-[11px] font-black uppercase tracking-wider text-purple-100 block">
+                          Barter Collaboration Mandate
+                        </span>
+                        <p className="text-xs text-purple-100 font-medium mt-1">
+                          Reels, stories, unboxings and prompt product parcel logistics across assigned brands.
+                        </p>
+                      </div>
+                      <div className="text-right bg-white/20 px-3 py-2 rounded-xl backdrop-blur-xs">
+                        <span className="text-[10px] font-black uppercase text-purple-100 block">Operations Mode</span>
+                        <span className="text-sm font-black text-white">100% Barter</span>
+                      </div>
                     </div>
-                    <p className="text-[10px] text-purple-700 font-medium">
-                      Auto-calculated from assigned brands quota (7B per Running Brand : 8B per New Brand).
-                    </p>
+                  </div>
+                ) : (
+                  /* STANDARD PAID OVERVIEW IN MODAL */
+                  <div className="space-y-4">
+                    {/* Quota Progress Meter */}
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
+                      <div className="flex justify-between items-center text-xs font-black">
+                        <span className="text-slate-700">Monthly Net Margin Paid Colab Progress</span>
+                        <span className="text-purple-700">
+                          ₹{new Intl.NumberFormat().format(selectedMemberForDetail.netMargin)} / ₹{new Intl.NumberFormat().format(selectedMemberForDetail.individualTarget)} ({selectedMemberForDetail.targetAchievedPercent}%)
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-200 rounded-full h-3 overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-purple-600 via-indigo-600 to-emerald-500 h-full rounded-full transition-all duration-500"
+                          style={{ width: `${selectedMemberForDetail.targetAchievedPercent}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        {selectedMemberForDetail.targetAchievedPercent >= 100
+                          ? '🎉 Congratulations! Full ₹1,20,000 quota achieved. Qualified for 10% Incentive Slab.'
+                          : selectedMemberForDetail.netMargin >= 80000
+                            ? '🥈 5% Incentive Slab unlocked (₹80k+ threshold crossed). ₹' + new Intl.NumberFormat().format(100000 - selectedMemberForDetail.netMargin) + ' needed for 10% Slab.'
+                            : '⚡ ₹' + new Intl.NumberFormat().format(80000 - selectedMemberForDetail.netMargin) + ' more Net Margin needed to unlock the 5% Incentive Slab.'}
+                      </p>
+                    </div>
+
+                    {/* Barter Quota Progress Meter */}
+                    {selectedMemberForDetail.individualBarterTarget !== undefined && selectedMemberForDetail.individualBarterTarget > 0 && (
+                      <div className="bg-purple-50/60 p-4 rounded-2xl border border-purple-200/80 space-y-2">
+                        <div className="flex justify-between items-center text-xs font-black">
+                          <span className="text-purple-900 flex items-center gap-1.5">
+                            <ShoppingBag size={14} className="text-purple-600" />
+                            Monthly Barter Collabs Goal ({selectedMemberForDetail.assignedBrands?.length || selectedMemberForDetail.employee.assignedBrandsCount} Brands)
+                          </span>
+                          <span className="text-purple-700">
+                            {selectedMemberForDetail.barterCount} / {selectedMemberForDetail.individualBarterTarget} Collabs ({selectedMemberForDetail.barterAchievedPercent || 0}%)
+                          </span>
+                        </div>
+                        <div className="w-full bg-purple-100 rounded-full h-2.5 overflow-hidden">
+                          <div
+                            className="bg-gradient-to-r from-purple-500 to-indigo-600 h-full rounded-full transition-all duration-500"
+                            style={{ width: `${selectedMemberForDetail.barterAchievedPercent || 0}%` }}
+                          />
+                        </div>
+                        <p className="text-[10px] text-purple-700 font-medium">
+                          Auto-calculated from assigned brands quota (7B per Running Brand : 8B per New Brand).
+                        </p>
+                      </div>
+                    )}
+
+                    {/* 4 Financial Highlight Cards */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Ad2ship Margin</span>
+                        <span className="text-base font-black text-slate-900 mt-0.5 block">
+                          ₹{new Intl.NumberFormat().format(selectedMemberForDetail.netMargin)}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-semibold">{selectedMemberForDetail.paidCount} Paid Collabs</span>
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Incentive Slab</span>
+                        <span className="text-base font-black text-purple-700 mt-0.5 block">
+                          {selectedMemberForDetail.targetIncentivePercentage}% Payout
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-semibold">
+                          {selectedMemberForDetail.netMargin >= 100000 ? '1L+ Threshold Met' : selectedMemberForDetail.netMargin >= 80000 ? '80k Threshold Met' : '< 80k Threshold'}
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">Target Bonus</span>
+                        <span className="text-base font-black text-slate-800 mt-0.5 block">
+                          ₹{new Intl.NumberFormat().format(selectedMemberForDetail.targetIncentiveAmount)}
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-semibold">{selectedMemberForDetail.targetIncentivePercentage}% × Net Margin</span>
+                      </div>
+
+                      <div className="bg-white p-3 rounded-xl border border-amber-200 bg-amber-50/40 shadow-2xs">
+                        <span className="text-[10px] uppercase font-bold text-amber-700 block">100+ Orders Bonus</span>
+                        <span className="text-base font-black text-amber-800 mt-0.5 block">
+                          +₹{new Intl.NumberFormat().format(selectedMemberForDetail.orderBonusAmount)}
+                        </span>
+                        <span className="text-[10px] text-amber-700 font-semibold">{selectedMemberForDetail.qualifyingBonusDealsCount} Viral Videos</span>
+                      </div>
+                    </div>
+
+                    {/* Total Take-Home Incentive Banner */}
+                    <div className="p-4 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-2xl shadow-md flex items-center justify-between">
+                      <div>
+                        <span className="text-[11px] font-black uppercase tracking-wider text-emerald-100 block">
+                          Total Monthly Take-Home Incentive Payout
+                        </span>
+                        <span className="text-2xl font-black mt-0.5 block">
+                          ₹{new Intl.NumberFormat().format(selectedMemberForDetail.totalTakeHomeIncentive)}
+                        </span>
+                        <p className="text-[10px] text-emerald-100 font-semibold mt-0.5">
+                          = Target Slab Incentive (₹{new Intl.NumberFormat().format(selectedMemberForDetail.targetIncentiveAmount)}) + 100+ Orders Video Bonus (₹{new Intl.NumberFormat().format(selectedMemberForDetail.orderBonusAmount)})
+                        </p>
+                      </div>
+
+                      <div className="text-right bg-white/20 px-3 py-2 rounded-xl backdrop-blur-xs">
+                        <span className="text-[10px] font-black uppercase text-emerald-100 block">Collabs Completed</span>
+                        <span className="text-sm font-black text-white">
+                          {selectedMemberForDetail.barterCount} Barter : {selectedMemberForDetail.paidCount} Paid
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 )}
-
-                {/* 4 Financial Highlight Cards */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Ad2ship Margin</span>
-                    <span className="text-base font-black text-slate-900 mt-0.5 block">
-                      ₹{new Intl.NumberFormat().format(selectedMemberForDetail.netMargin)}
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-semibold">{selectedMemberForDetail.paidCount} Paid Collabs</span>
-                  </div>
-
-                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Incentive Slab</span>
-                    <span className="text-base font-black text-purple-700 mt-0.5 block">
-                      {selectedMemberForDetail.targetIncentivePercentage}% Payout
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-semibold">
-                      {selectedMemberForDetail.netMargin >= 100000 ? '1L+ Threshold Met' : selectedMemberForDetail.netMargin >= 80000 ? '80k Threshold Met' : '< 80k Threshold'}
-                    </span>
-                  </div>
-
-                  <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[10px] uppercase font-bold text-slate-400 block">Target Bonus</span>
-                    <span className="text-base font-black text-slate-800 mt-0.5 block">
-                      ₹{new Intl.NumberFormat().format(selectedMemberForDetail.targetIncentiveAmount)}
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-semibold">{selectedMemberForDetail.targetIncentivePercentage}% × Net Margin</span>
-                  </div>
-
-                  <div className="bg-white p-3 rounded-xl border border-amber-200 bg-amber-50/40 shadow-2xs">
-                    <span className="text-[10px] uppercase font-bold text-amber-700 block">100+ Orders Bonus</span>
-                    <span className="text-base font-black text-amber-800 mt-0.5 block">
-                      +₹{new Intl.NumberFormat().format(selectedMemberForDetail.orderBonusAmount)}
-                    </span>
-                    <span className="text-[10px] text-amber-700 font-semibold">{selectedMemberForDetail.qualifyingBonusDealsCount} Viral Videos</span>
-                  </div>
-                </div>
-
-                {/* Total Take-Home Incentive Banner */}
-                <div className="p-4 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-2xl shadow-md flex items-center justify-between">
-                  <div>
-                    <span className="text-[11px] font-black uppercase tracking-wider text-emerald-100 block">
-                      Total Monthly Take-Home Incentive Payout
-                    </span>
-                    <span className="text-2xl font-black mt-0.5 block">
-                      ₹{new Intl.NumberFormat().format(selectedMemberForDetail.totalTakeHomeIncentive)}
-                    </span>
-                    <p className="text-[10px] text-emerald-100 font-semibold mt-0.5">
-                      = Target Slab Incentive (₹{new Intl.NumberFormat().format(selectedMemberForDetail.targetIncentiveAmount)}) + 100+ Orders Video Bonus (₹{new Intl.NumberFormat().format(selectedMemberForDetail.orderBonusAmount)})
-                    </p>
-                  </div>
-
-                  <div className="text-right bg-white/20 px-3 py-2 rounded-xl backdrop-blur-xs">
-                    <span className="text-[10px] font-black uppercase text-emerald-100 block">Collabs Completed</span>
-                    <span className="text-sm font-black text-white">
-                      {selectedMemberForDetail.barterCount} Barter : {selectedMemberForDetail.paidCount} Paid
-                    </span>
-                  </div>
-                </div>
               </div>
             )}
 
@@ -4938,8 +5400,17 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                           </span>
                         </div>
                         <div className="text-[10px] text-slate-500 font-semibold flex justify-between pt-1 border-t border-slate-100">
-                          <span>Target: <strong className="text-purple-700">{b.targetBarterCollabs}B : {b.targetPaidCollabs}P</strong></span>
-                          <span className="text-slate-700 font-bold">{b.targetTotalCollabs} Total</span>
+                          {isBarterExec || (selectedMemberForDetail.employee.designation || '').toLowerCase().includes('barter') || (selectedMemberForDetail.employee.role || '').toLowerCase().includes('barter') ? (
+                            <>
+                              <span>Monthly Barter Goal: <strong className="text-purple-700">{b.targetBarterCollabs} Deals</strong></span>
+                              <span className="text-slate-700 font-bold">~{b.targetBarterCollabs} / Mo</span>
+                            </>
+                          ) : (
+                            <>
+                              <span>Target: <strong className="text-purple-700">{b.targetBarterCollabs}B : {b.targetPaidCollabs}P</strong></span>
+                              <span className="text-slate-700 font-bold">{b.targetTotalCollabs} Total</span>
+                            </>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -4953,7 +5424,9 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
               <div className="space-y-3 pt-1">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-xs font-extrabold text-slate-700">
-                    All Collaborations ({selectedMemberForDetail.deals?.length || 0})
+                    {isBarterExec || (selectedMemberForDetail.employee.designation || '').toLowerCase().includes('barter') || (selectedMemberForDetail.employee.role || '').toLowerCase().includes('barter')
+                      ? `Barter Collaborations (${selectedMemberForDetail.deals?.filter(d => d.category === 'Barter').length || selectedMemberForDetail.barterCount || 0})`
+                      : `All Collaborations (${selectedMemberForDetail.deals?.length || 0})`}
                   </span>
                   <div className="relative w-56">
                     <Search size={13} className="absolute left-2.5 top-2 text-slate-400" />
@@ -4978,53 +5451,94 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
                         <tr className="bg-slate-800 text-slate-200 font-bold text-[11px] sticky top-0">
                           <th className="p-2.5 border-b border-r border-slate-700">Brand</th>
                           <th className="p-2.5 border-b border-r border-slate-700">Influencer</th>
-                          <th className="p-2.5 border-b border-r border-slate-700 text-center">Type</th>
-                          <th className="p-2.5 border-b border-r border-slate-700 text-right">Brand (IN)</th>
-                          <th className="p-2.5 border-b border-r border-slate-700 text-right">Creator (OUT)</th>
-                          <th className="p-2.5 border-b border-r border-slate-700 text-right">Margin</th>
-                          <th className="p-2.5 border-b border-slate-700 text-center">Orders & Bonus</th>
+                          {(isBarterExec || (selectedMemberForDetail.employee.designation || '').toLowerCase().includes('barter') || (selectedMemberForDetail.employee.role || '').toLowerCase().includes('barter')) ? (
+                            <>
+                              <th className="p-2.5 border-b border-r border-slate-700 text-center">Deliverable / Type</th>
+                              <th className="p-2.5 border-b border-r border-slate-700 text-center">Collab Date</th>
+                              <th className="p-2.5 border-b border-slate-700 text-center">Status</th>
+                            </>
+                          ) : (
+                            <>
+                              <th className="p-2.5 border-b border-r border-slate-700 text-center">Type</th>
+                              <th className="p-2.5 border-b border-r border-slate-700 text-right">Brand (IN)</th>
+                              <th className="p-2.5 border-b border-r border-slate-700 text-right">Creator (OUT)</th>
+                              <th className="p-2.5 border-b border-r border-slate-700 text-right">Margin</th>
+                              <th className="p-2.5 border-b border-slate-700 text-center">Orders & Bonus</th>
+                            </>
+                          )}
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 font-medium text-slate-800 text-[11px]">
                         {selectedMemberForDetail.deals
                           .filter(d => {
+                            if (isBarterExec || (selectedMemberForDetail.employee.designation || '').toLowerCase().includes('barter') || (selectedMemberForDetail.employee.role || '').toLowerCase().includes('barter')) {
+                              if (d.category !== 'Barter') return false;
+                            }
                             if (!detailDealsSearch) return true;
                             const q = detailDealsSearch.toLowerCase();
                             return (d.brandName && d.brandName.toLowerCase().includes(q)) || (d.influencerName && d.influencerName.toLowerCase().includes(q));
                           })
-                          .map((d, idx) => (
-                            <tr key={d.id || idx} className="hover:bg-purple-50/30 transition">
-                              <td className="p-2.5 border-r border-slate-100 font-extrabold text-slate-900">{d.brandName}</td>
-                              <td className="p-2.5 border-r border-slate-100 font-bold text-slate-700">{d.influencerName}</td>
-                              <td className="p-2.5 border-r border-slate-100 text-center">
-                                <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
-                                  d.category === 'Paid' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
-                                }`}>
-                                  {d.category}
-                                </span>
-                              </td>
-                              <td className="p-2.5 border-r border-slate-100 text-right font-semibold">
-                                {d.category === 'Paid' ? `₹${new Intl.NumberFormat().format(d.brandOnboardingAmt || 0)}` : '-'}
-                              </td>
-                              <td className="p-2.5 border-r border-slate-100 text-right font-semibold text-rose-600">
-                                {d.category === 'Paid' ? `₹${new Intl.NumberFormat().format(d.influencerOnboardingAmt || 0)}` : '-'}
-                              </td>
-                              <td className={`p-2.5 border-r border-slate-100 text-right font-black ${
-                                (d.ad2shipMargin ?? ((d.brandOnboardingAmt || 0) - (d.influencerOnboardingAmt || 0))) >= 0 ? 'text-emerald-600' : 'text-rose-600'
-                              }`}>
-                                {d.category === 'Paid' ? `₹${new Intl.NumberFormat().format(d.ad2shipMargin !== undefined ? d.ad2shipMargin : ((d.brandOnboardingAmt || 0) - (d.influencerOnboardingAmt || 0)))}` : '-'}
-                              </td>
-                              <td className="p-2.5 text-center">
-                                {d.ordersGenerated >= 100 ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300">
-                                    🌟 {d.ordersGenerated} (+₹{new Intl.NumberFormat().format(Math.round(d.ad2shipMargin * 0.10))})
+                          .map((d, idx) => {
+                            const isBarterDetail = isBarterExec || (selectedMemberForDetail.employee.designation || '').toLowerCase().includes('barter') || (selectedMemberForDetail.employee.role || '').toLowerCase().includes('barter');
+                            if (isBarterDetail) {
+                              return (
+                                <tr key={d.id || idx} className="hover:bg-purple-50/30 transition">
+                                  <td className="p-2.5 border-r border-slate-100 font-extrabold text-slate-900">{d.brandName}</td>
+                                  <td className="p-2.5 border-r border-slate-100 font-bold text-slate-700">{d.influencerName}</td>
+                                  <td className="p-2.5 border-r border-slate-100 text-center">
+                                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800">
+                                      {d.videoType || 'Product Review / Reel'}
+                                    </span>
+                                  </td>
+                                  <td className="p-2.5 border-r border-slate-100 text-center text-slate-600 font-medium">
+                                    {d.transactionDate ? new Date(d.transactionDate).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '-'}
+                                  </td>
+                                  <td className="p-2.5 text-center">
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                                      d.status === 'Completed' || d.status === 'Approved' || d.status === 'Settled'
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : 'bg-amber-100 text-amber-800'
+                                    }`}>
+                                      {d.status || 'Completed'}
+                                    </span>
+                                  </td>
+                                </tr>
+                              );
+                            }
+                            return (
+                              <tr key={d.id || idx} className="hover:bg-purple-50/30 transition">
+                                <td className="p-2.5 border-r border-slate-100 font-extrabold text-slate-900">{d.brandName}</td>
+                                <td className="p-2.5 border-r border-slate-100 font-bold text-slate-700">{d.influencerName}</td>
+                                <td className="p-2.5 border-r border-slate-100 text-center">
+                                  <span className={`px-2 py-0.5 rounded text-[9px] font-black uppercase ${
+                                    d.category === 'Paid' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'
+                                  }`}>
+                                    {d.category}
                                   </span>
-                                ) : (
-                                  <span className="text-[10px] text-slate-400 font-semibold">{d.ordersGenerated || 0} orders</span>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
+                                </td>
+                                <td className="p-2.5 border-r border-slate-100 text-right font-semibold">
+                                  {d.category === 'Paid' ? `₹${new Intl.NumberFormat().format(d.brandOnboardingAmt || 0)}` : '-'}
+                                </td>
+                                <td className="p-2.5 border-r border-slate-100 text-right font-semibold text-rose-600">
+                                  {d.category === 'Paid' ? `₹${new Intl.NumberFormat().format(d.influencerOnboardingAmt || 0)}` : '-'}
+                                </td>
+                                <td className={`p-2.5 border-r border-slate-100 text-right font-black ${
+                                  (d.ad2shipMargin ?? ((d.brandOnboardingAmt || 0) - (d.influencerOnboardingAmt || 0))) >= 0 ? 'text-emerald-600' : 'text-rose-600'
+                                }`}>
+                                  {d.category === 'Paid' ? `₹${new Intl.NumberFormat().format(d.ad2shipMargin !== undefined ? d.ad2shipMargin : ((d.brandOnboardingAmt || 0) - (d.influencerOnboardingAmt || 0)))}` : '-'}
+                                </td>
+                                <td className="p-2.5 text-center">
+                                  {d.ordersGenerated >= 100 ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                                      🌟 {d.ordersGenerated} (+₹{new Intl.NumberFormat().format(Math.round(d.ad2shipMargin * 0.10))})
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 font-semibold">{d.ordersGenerated || 0} orders</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
                       </tbody>
                     </table>
                   </div>

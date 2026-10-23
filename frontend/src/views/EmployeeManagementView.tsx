@@ -36,6 +36,24 @@ export const EmployeeManagementView: React.FC = () => {
   const [pendingEmployees, setPendingEmployees] = useState<Employee[]>([]);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [departmentsList, setDepartmentsList] = useState<any[]>([]);
+  const [rolesList, setRolesList] = useState<any[]>([]);
+
+  const DEFAULT_ROLES = [
+    'Employee',
+    'Posting & Content Executive',
+    'Barter Collab Executive',
+    'Paid Collab Executive',
+    'Team Leader',
+    'Assistant Manager',
+    'Assistant Marketing Manager',
+    'Marketing Manager',
+    'Admin'
+  ];
+
+  const availableRoleNames = Array.from(new Set([
+    ...DEFAULT_ROLES,
+    ...rolesList.map((r: any) => r.name)
+  ]));
 
   const fetchEmployees = async (page = currentPage) => {
     try {
@@ -57,6 +75,11 @@ export const EmployeeManagementView: React.FC = () => {
         if (dRes.data.length > 0 && !department) {
           setDepartment(dRes.data[0]._id);
         }
+      }
+
+      const rRes = await api.get('/roles');
+      if (rRes.success && Array.isArray(rRes.data)) {
+        setRolesList(rRes.data);
       }
     } catch (err) {
       console.error(err);
@@ -538,12 +561,9 @@ export const EmployeeManagementView: React.FC = () => {
                 onChange={(e) => setRole(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 focus:border-purple-500 rounded-xl px-3 py-2 text-slate-900 font-bold focus:outline-none"
               >
-                <option value="Employee">Employee</option>
-                <option value="Team Leader">Team Leader</option>
-                <option value="Assistant Manager">Assistant Manager</option>
-                <option value="Assistant Marketing Manager">Assistant Marketing Manager</option>
-                <option value="Marketing Manager">Marketing Manager</option>
-                <option value="Admin">Admin</option>
+                {availableRoleNames.map((roleName) => (
+                  <option key={roleName} value={roleName}>{roleName}</option>
+                ))}
               </select>
             </div>
             <div>
@@ -659,12 +679,9 @@ export const EmployeeManagementView: React.FC = () => {
                 onChange={(e) => setRole(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-200 focus:border-purple-500 rounded-xl px-3 py-2 text-slate-900 font-bold focus:outline-none"
               >
-                <option value="Employee">Employee</option>
-                <option value="Team Leader">Team Leader</option>
-                <option value="Assistant Manager">Assistant Manager</option>
-                <option value="Assistant Marketing Manager">Assistant Marketing Manager</option>
-                <option value="Marketing Manager">Marketing Manager</option>
-                <option value="Admin">Admin</option>
+                {availableRoleNames.map((roleName) => (
+                  <option key={roleName} value={roleName}>{roleName}</option>
+                ))}
               </select>
             </div>
             <div>

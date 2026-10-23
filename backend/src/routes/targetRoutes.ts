@@ -4,25 +4,39 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { checkPermission } from '../middleware/rbac';
 import { logActivity } from '../middleware/auditLog';
 import { cacheMiddleware } from '../middleware/cache';
+import { getEmployeeForAuthUser } from '../utils/employeeHelper';
+import { isManagerOrAdminRole } from '../config/constants';
 
 const router = Router();
 
 // Helper to get active team members in Influencer Marketing
-export const getActiveInfluencerMembers = async () => {
-  const dept = await Department.findOne({ name: /influencer/i });
-  const deptIds: any[] = ['Influencer Marketing', 'Influencer'];
-  if (dept) deptIds.push(dept._id);
+export const getActiveInfluencerMembers = async (roleFilter?: string) => {
+  const depts = await Department.find({ name: { $in: [/influencer/i, /social/i] } });
+  const deptIds: any[] = ['Influencer Marketing', 'Influencer', 'Social Media'];
+  depts.forEach(d => deptIds.push(d._id));
 
-  let members = await Employee.find({
+  const targetRoles = [
+    'Employee', 'Influencer Executive', 'Team Leader', 'Influencer Marketer',
+    'Barter Collab Executive', 'Paid Collab Executive', 'Posting & Content Executive'
+  ];
+
+  let query: any = {
     status: 'Active',
+    isDeleted: { $ne: true },
     $or: [
       { department: { $in: deptIds } },
-      { role: { $in: ['Employee', 'Influencer Executive', 'Team Leader', 'Influencer Marketer'] } }
+      { role: { $in: targetRoles } }
     ]
-  }).sort({ employeeId: 1, name: 1 });
+  };
+
+  if (roleFilter) {
+    query.role = roleFilter;
+  }
+
+  let members = await Employee.find(query).sort({ employeeId: 1, name: 1 });
 
   if (members.length === 0) {
-    members = await Employee.find({ status: 'Active' }).sort({ employeeId: 1, name: 1 });
+    members = await Employee.find({ status: 'Active', isDeleted: { $ne: true } }).sort({ employeeId: 1, name: 1 });
   }
 
   return members;
@@ -207,6 +221,12 @@ router.get('/team-breakdown', authenticateToken, checkPermission('target.view'),
       Influencer.find({ category: 'Barter', isDeleted: { $ne: true }, status: { $in: ['Completed', 'Approved', 'Settled', 'completed', 'approved', 'settled'] }, ...dateFilter }).sort({ transactionDate: -1 }).lean()
     ]);
 
+    // Ensure logged in employee is present in the members list
+    const currentEmp = await getEmployeeForAuthUser(req.user);
+    if (currentEmp && !members.some(m => m._id.toString() === currentEmp._id.toString())) {
+      members.push(currentEmp as any);
+    }
+
     const teamSize = members.length;
     const perMemberTarget = 120000;
     const teamTargetAmount = activePaidTarget ? activePaidTarget.targetAmount : (teamSize * perMemberTarget);
@@ -218,8 +238,16 @@ router.get('/team-breakdown', authenticateToken, checkPermission('target.view'),
     let teamAchievedBarterCount = 0;
 
     const memberBreakdowns = members.map(emp => {
+      const isBarterMember = (emp.role || emp.designation || '').toLowerCase().includes('barter');
+      const isPaidMember = (emp.role || emp.designation || '').toLowerCase().includes('paid');
+
       const assignedBrandIds = allAssignments
-        .filter(a => a.employeeId.toString() === emp._id.toString())
+        .filter(a => {
+          if (a.employeeId.toString() !== emp._id.toString()) return false;
+          if (isBarterMember) return a.assignmentType === 2 || !a.assignmentType;
+          if (isPaidMember) return a.assignmentType === 3 || !a.assignmentType;
+          return true;
+        })
         .map(a => a.brandId.toString());
 
       const assignedBrandDocs = allBrands.filter(b => assignedBrandIds.includes((b._id as any).toString()));
@@ -325,6 +353,7 @@ router.get('/team-breakdown', authenticateToken, checkPermission('target.view'),
           email: emp.email,
           department: emp.department,
           designation: emp.designation,
+          role: emp.role || emp.designation,
           assignedBrandsCount: assignedBrandDocs.length
         },
         individualTarget: perMemberTarget,
@@ -352,6 +381,18 @@ router.get('/team-breakdown', authenticateToken, checkPermission('target.view'),
     // Optional Search & Server-Side Pagination
     const { page, limit, search } = req.query;
     let filteredMembers = memberBreakdowns;
+
+    // Role Isolation: If not manager, assistant manager, or admin, only show own breakdown
+    const isManagerOrAdmin = isManagerOrAdminRole(req.user?.role);
+    if (!isManagerOrAdmin) {
+      const currentEmp = await getEmployeeForAuthUser(req.user);
+      if (currentEmp) {
+        filteredMembers = filteredMembers.filter(m => m.employee.id.toString() === currentEmp._id.toString());
+      } else {
+        filteredMembers = [];
+      }
+    }
+
     if (search && typeof search === 'string' && search.trim()) {
       const q = search.trim().toLowerCase();
       filteredMembers = filteredMembers.filter(m =>
@@ -402,7 +443,18 @@ router.get('/', authenticateToken, checkPermission('target.view'), async (req: A
     const { timeframe, year, month } = req.query;
     const dateFilter = buildDateFilter(timeframe as string, year as string, month as string);
 
-    const targets = await Target.find({ isDeleted: { $ne: true } }).sort({ createdAt: -1 }).populate('createdBy', 'name email role');
+    const userRole = (req.user?.role || '').toLowerCase();
+    const isBarterUser = userRole.includes('barter');
+    const isPaidUser = userRole.includes('paid');
+
+    const queryFilter: any = { isDeleted: { $ne: true } };
+    if (isBarterUser) {
+      queryFilter.targetType = 'Barter';
+    } else if (isPaidUser) {
+      queryFilter.targetType = 'Paid';
+    }
+
+    const targets = await Target.find(queryFilter).sort({ createdAt: -1 }).populate('createdBy', 'name email role');
     for (const target of targets) {
       await recalculateTargetProgress(target, dateFilter);
     }
@@ -423,11 +475,30 @@ router.get('/active', authenticateToken, checkPermission('target.view'), cacheMi
     const { timeframe, year, month } = req.query;
     const dateFilter = buildDateFilter(timeframe as string, year as string, month as string);
 
-    let activeTarget = await Target.findOne({ isActive: true, status: 'Active', isDeleted: { $ne: true } }).sort({ updatedAt: -1 }).populate('createdBy', 'name email role');
+    const userRole = (req.user?.role || '').toLowerCase();
+    const isBarterUser = userRole.includes('barter');
+    const isPaidUser = userRole.includes('paid');
+
+    const typeFilter: any = {};
+    if (isBarterUser) typeFilter.targetType = 'Barter';
+    else if (isPaidUser) typeFilter.targetType = 'Paid';
+
+    let activeTarget = await Target.findOne({ isActive: true, status: 'Active', isDeleted: { $ne: true }, ...typeFilter })
+      .sort({ updatedAt: -1 })
+      .populate('createdBy', 'name email role');
     
-    // Fallback: If no target is explicitly marked isActive, pick the most recent Active target
+    // Fallback: If no target is explicitly marked isActive, pick the most recent Active target of that type
     if (!activeTarget) {
-      activeTarget = await Target.findOne({ status: 'Active', isDeleted: { $ne: true } }).sort({ createdAt: -1 }).populate('createdBy', 'name email role');
+      activeTarget = await Target.findOne({ status: 'Active', isDeleted: { $ne: true }, ...typeFilter })
+        .sort({ createdAt: -1 })
+        .populate('createdBy', 'name email role');
+    }
+
+    // Fallback to any active target if specific type target not found
+    if (!activeTarget) {
+      activeTarget = await Target.findOne({ status: 'Active', isDeleted: { $ne: true } })
+        .sort({ createdAt: -1 })
+        .populate('createdBy', 'name email role');
     }
 
     if (activeTarget) {

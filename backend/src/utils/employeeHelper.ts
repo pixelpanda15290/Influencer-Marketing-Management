@@ -13,11 +13,30 @@ export async function getEmployeeForAuthUser(user?: IUser | null): Promise<IEmpl
     if (empByUserId) return empByUserId;
   }
 
-  // 2. Secondary lookup: Match exact user email address
+  // 2. Secondary lookup: Match user email address (case-insensitive)
   if (user.email) {
-    const empByEmail = await Employee.findOne({ email: user.email.toLowerCase() }).populate('department', 'name code description status');
+    const trimmedEmail = user.email.trim();
+    const empByEmail = await Employee.findOne({
+      email: { $regex: new RegExp(`^${trimmedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+    }).populate('department', 'name code description status');
     if (empByEmail) return empByEmail;
+  }
+
+  // 3. Match by employeeId if present
+  if ((user as any).employeeId) {
+    const empById = await Employee.findOne({ employeeId: (user as any).employeeId }).populate('department', 'name code description status');
+    if (empById) return empById;
+  }
+
+  // 4. Fallback: Match by exact name (case-insensitive)
+  if (user.name) {
+    const trimmedName = user.name.trim();
+    const empByName = await Employee.findOne({
+      name: { $regex: new RegExp(`^${trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i') }
+    }).populate('department', 'name code description status');
+    if (empByName) return empByName;
   }
 
   return null;
 }
+

@@ -61,12 +61,21 @@ export const TargetTopBanner: React.FC<TargetTopBannerProps> = ({ user, onNaviga
 
   if (loading || !target) return null;
 
-  const isEmployee = user?.role === 'Employee' || isAssistantManager;
-  const effectiveTargetAmount = isEmployee ? 120000 : (target.targetAmount || 720000);
-  const percentage = Math.min(100, Math.round(((target.achievedAmount || 0) / effectiveTargetAmount) * 100));
-  const remaining = Math.max(0, effectiveTargetAmount - (target.achievedAmount || 0));
+  const isBarterUser = user?.role === 'Barter Collab Executive' || (!!user?.role && user.role.toLowerCase().includes('barter')) || target.targetType === 'Barter';
+  const isEmployee = user?.role === 'Employee' || isAssistantManager || isBarterUser || (!!user?.role && user.role.toLowerCase().includes('paid'));
+
+  const effectiveTargetAmount = isBarterUser 
+    ? (target.targetCount || target.targetAmount || 300)
+    : (isEmployee ? 120000 : (target.targetAmount || 720000));
+
+  const effectiveAchieved = isBarterUser
+    ? (target.achievedCount !== undefined ? target.achievedCount : (target.achievedAmount || 0))
+    : (target.achievedAmount || 0);
+
+  const percentage = effectiveTargetAmount > 0 ? Math.min(100, Math.round((effectiveAchieved / effectiveTargetAmount) * 100)) : 0;
+  const remaining = Math.max(0, effectiveTargetAmount - effectiveAchieved);
   const formattedTarget = new Intl.NumberFormat().format(effectiveTargetAmount);
-  const formattedAchieved = new Intl.NumberFormat().format(target.achievedAmount || 0);
+  const formattedAchieved = new Intl.NumberFormat().format(effectiveAchieved);
   const formattedRemaining = new Intl.NumberFormat().format(remaining);
 
   return (
@@ -85,7 +94,9 @@ export const TargetTopBanner: React.FC<TargetTopBannerProps> = ({ user, onNaviga
               </span>
             </div>
             <p className="text-[11px] text-slate-300 font-medium">
-              {isTargetManager ? (
+              {isBarterUser ? (
+                <>Monthly Barter Target | Performance: <span className="font-bold text-purple-300">{percentage}% Barter Deals Met ({formattedAchieved}/{formattedTarget} Deals)</span></>
+              ) : isTargetManager ? (
                 <>Net Margin Target: <span className="font-bold text-emerald-400">{target.currency}{formattedTarget}</span> | Achieved: <span className="font-bold text-purple-300">{target.currency}{formattedAchieved}</span> ({percentage}%)</>
               ) : (
                 <>Monthly Target | Performance: <span className="font-bold text-purple-300">{percentage}% Paid Colab Met</span></>
@@ -101,7 +112,7 @@ export const TargetTopBanner: React.FC<TargetTopBannerProps> = ({ user, onNaviga
               <TrendingUp size={12} /> {percentage}% Completed
             </span>
             <span className="text-slate-400">
-              {remaining === 0 ? '🎯 Target Reached!' : isTargetManager ? `${target.currency}${formattedRemaining} Remaining` : `${100 - percentage}% Remaining`}
+              {remaining === 0 ? '🎯 Target Reached!' : isBarterUser ? `${formattedRemaining} Deals Remaining` : isTargetManager ? `${target.currency}${formattedRemaining} Remaining` : `${100 - percentage}% Remaining`}
             </span>
           </div>
           <div className="w-full bg-slate-800/80 rounded-full h-2.5 overflow-hidden border border-slate-700 p-0.5">

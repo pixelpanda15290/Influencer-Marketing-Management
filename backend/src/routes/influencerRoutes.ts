@@ -148,19 +148,53 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
     const { category, timeframe, year, month, search, brand, manager, status, deliverable, date, startDate, endDate, completedStartDate, completedEndDate } = req.query;
     const filter: any = { isDeleted: { $ne: true } };
 
-    // 0. Employee Role Scoping (Only show data where employee is the assigned manager/executive)
-    if (req.user?.role === 'Employee') {
+    // 0. Employee / Executive Role Scoping:
+    // Show all previous and current collaborations for brands assigned to this executive,
+    // plus any collaborations where the executive is directly the manager, assignee, or creator.
+    const userRole = req.user?.role;
+    const isExecutive = userRole === 'Employee' || userRole === 'Posting & Content Executive' || userRole === 'Barter Collab Executive' || userRole === 'Paid Collab Executive';
+    let executiveScopingOr: any[] | null = null;
+
+    if (isExecutive && req.user) {
       const employeeDoc = await getEmployeeForAuthUser(req.user);
       if (employeeDoc) {
         const empNameRegex = getManagerSearchRegex(employeeDoc.name);
 
+        // Fetch active brand assignments for this employee
+        const assignmentQuery: any = {
+          employeeId: employeeDoc._id,
+          status: 'Active'
+        };
+        if (userRole === 'Barter Collab Executive') {
+          assignmentQuery.assignmentType = { $in: [2, null] };
+        } else if (userRole === 'Paid Collab Executive') {
+          assignmentQuery.assignmentType = { $in: [3, null] };
+        }
+
+        const assignments = await EmployeeBrand.find(assignmentQuery).lean();
+        const assignedBrandIds = assignments.map(a => a.brandId);
+
+        // Fetch brand documents to match both brandId and brandName (case-insensitive)
+        const assignedBrands = await Brand.find({ _id: { $in: assignedBrandIds } }).select('brandName').lean();
+        const brandNames = assignedBrands.map(b => b.brandName).filter(Boolean);
+        const brandNameRegexes = brandNames.map(name => new RegExp(`^${escapeRegex(name.trim())}$`, 'i'));
+
+        executiveScopingOr = [
+          { influencerManager: empNameRegex },
+          { assignedExecutive: empNameRegex },
+          { createdBy: req.user._id }
+        ];
+
+        if (assignedBrandIds.length > 0) {
+          executiveScopingOr.push({ brandId: { $in: assignedBrandIds } });
+        }
+        if (brandNameRegexes.length > 0) {
+          executiveScopingOr.push({ brandName: { $in: brandNameRegexes } });
+        }
+
         filter.$and = filter.$and || [];
         filter.$and.push({
-          $or: [
-            { influencerManager: empNameRegex },
-            { assignedExecutive: empNameRegex },
-            { createdBy: req.user._id }
-          ]
+          $or: executiveScopingOr
         });
       }
     }
@@ -168,6 +202,10 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
     // 1. Sub-module Category Filter (Paid vs Barter)
     if (category && category !== 'All') {
       filter.category = category;
+    } else if (userRole === 'Barter Collab Executive') {
+      filter.category = 'Barter';
+    } else if (userRole === 'Paid Collab Executive') {
+      filter.category = 'Paid';
     }
 
     // 2. Date Range / Timeframe Filter — Matches transactionDate OR connectedDate/createdAt if transactionDate is blank
@@ -358,6 +396,13 @@ router.get('/', authenticateToken, checkPermission('influencer.view'), async (re
     const baseCategoryFilter: any = { isDeleted: { $ne: true } };
     if (category && category !== 'All') {
       baseCategoryFilter.category = category;
+    } else if (userRole === 'Barter Collab Executive') {
+      baseCategoryFilter.category = 'Barter';
+    } else if (userRole === 'Paid Collab Executive') {
+      baseCategoryFilter.category = 'Paid';
+    }
+    if (executiveScopingOr && executiveScopingOr.length > 0) {
+      baseCategoryFilter.$or = executiveScopingOr;
     }
 
     const monthStart = new Date(currentYear, currentMonth, 1, 0, 0, 0);
@@ -1247,27 +1292,54 @@ router.delete('/:id', authenticateToken, checkPermission('influencer.delete'), a
 });
 
 // GET /api/v1/influencers/payment-logs
-router.get('/payment-logs', authenticateToken, checkPermission('influencer.view'), async (req: AuthRequest, res: Response) => {
+router.get('/payment-logs', authenticateToken, checkPermission('influencer.view', 'influencer.payment.view', 'influencer.paid.view'), async (req: AuthRequest, res: Response) => {
   try {
     const { type, timeframe, year, month, search } = req.query;
     const filter: any = { isDeleted: { $ne: true } };
+
+    if (req.user?.role === 'Barter Collab Executive' || req.user?.role === 'Posting & Content Executive') {
+      return res.status(403).json({ success: false, message: 'Access denied: You do not have permission to view payment audit logs.' });
+    }
 
     if (type && type !== 'All') {
       filter.type = type;
     }
 
-    if (req.user?.role === 'Employee') {
+    if (req.user?.role === 'Employee' || req.user?.role === 'Paid Collab Executive') {
       const employeeDoc = await getEmployeeForAuthUser(req.user);
       if (employeeDoc) {
-        const empNameRegex = new RegExp(`^${employeeDoc.name.trim()}$`, 'i');
+        const empNameRegex = getManagerSearchRegex(employeeDoc.name);
+
+        const assignmentQuery: any = {
+          employeeId: employeeDoc._id,
+          status: 'Active'
+        };
+        if (req.user.role === 'Paid Collab Executive') {
+          assignmentQuery.assignmentType = { $in: [3, null] };
+        }
+
+        const assignments = await EmployeeBrand.find(assignmentQuery).lean();
+        const assignedBrandIds = assignments.map(a => a.brandId);
+
+        const assignedBrands = await Brand.find({ _id: { $in: assignedBrandIds } }).select('brandName').lean();
+        const brandNames = assignedBrands.map(b => b.brandName).filter(Boolean);
+        const brandNameRegexes = brandNames.map(name => new RegExp(`^${escapeRegex(name.trim())}$`, 'i'));
+
+        const scopingConditions: any[] = [
+          { handledBy: empNameRegex },
+          { createdBy: req.user._id },
+          { handledBy: { $in: ['', null, 'Unassigned'] } }
+        ];
+
+        if (assignedBrandIds.length > 0) {
+          scopingConditions.push({ brandId: { $in: assignedBrandIds } });
+        }
+        if (brandNameRegexes.length > 0) {
+          scopingConditions.push({ brandName: { $in: brandNameRegexes } });
+        }
 
         filter.$and = filter.$and || [];
-        filter.$and.push({
-          $or: [
-            { handledBy: empNameRegex },
-            { createdBy: req.user._id }
-          ]
-        });
+        filter.$and.push({ $or: scopingConditions });
       }
     }
 
@@ -1302,13 +1374,17 @@ router.get('/payment-logs', authenticateToken, checkPermission('influencer.view'
       filter.transactionDate = { $gte: startOfYear, $lte: endOfYear };
     }
 
-    if (search) {
-      filter.$or = [
-        { influencerName: { $regex: search, $options: 'i' } },
-        { brandName: { $regex: search, $options: 'i' } },
-        { handledBy: { $regex: search, $options: 'i' } },
-        { referenceNo: { $regex: search, $options: 'i' } }
-      ];
+    if (search && typeof search === 'string' && search.trim()) {
+      const sRegex = new RegExp(escapeRegex(search.trim()), 'i');
+      filter.$and = filter.$and || [];
+      filter.$and.push({
+        $or: [
+          { influencerName: sRegex },
+          { brandName: sRegex },
+          { handledBy: sRegex },
+          { referenceNo: sRegex }
+        ]
+      });
     }
 
     const pageNum = req.query.page ? Math.max(1, Number(req.query.page)) : undefined;
@@ -1319,7 +1395,7 @@ router.get('/payment-logs', authenticateToken, checkPermission('influencer.view'
     const totalOut = allLogs.filter(l => l.type === 'OUT').reduce((acc, l) => acc + (l.amount || 0), 0);
     const totalCount = allLogs.length;
 
-    let query = PaymentLog.find(filter).sort({ transactionDate: 1, createdAt: 1 });
+    let query = PaymentLog.find(filter).sort({ transactionDate: -1, createdAt: -1 });
     if (pageNum !== undefined) {
       query = query.skip((pageNum - 1) * limitNum).limit(limitNum);
     }
@@ -1348,7 +1424,7 @@ router.get('/payment-logs', authenticateToken, checkPermission('influencer.view'
 });
 
 // POST /api/v1/influencers/payment-logs
-router.post('/payment-logs', authenticateToken, checkPermission('influencer.create'), async (req: AuthRequest, res: Response) => {
+router.post('/payment-logs', authenticateToken, checkPermission('influencer.create', 'influencer.payment.create'), async (req: AuthRequest, res: Response) => {
   try {
     const { influencerId, influencerName, brandName, type, amount, paymentMode, referenceNo, handledBy, notes, transactionDate } = req.body;
 
@@ -1395,7 +1471,7 @@ router.post('/payment-logs', authenticateToken, checkPermission('influencer.crea
 });
 
 // DELETE /api/v1/influencers/payment-logs/:id
-router.delete('/payment-logs/:id', authenticateToken, checkPermission('influencer.delete'), async (req: AuthRequest, res: Response) => {
+router.delete('/payment-logs/:id', authenticateToken, checkPermission('influencer.delete', 'influencer.payment.delete'), async (req: AuthRequest, res: Response) => {
   try {
     const deleted = await PaymentLog.findById(req.params.id);
     if (!deleted || deleted.isDeleted) {

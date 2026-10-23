@@ -36,12 +36,39 @@ export const EmployeePerformanceView: React.FC<EmployeePerformanceViewProps> = (
   const [panelReportData, setPanelReportData] = useState<any[]>([]);
   const [panelReportLoading, setPanelReportLoading] = useState(false);
 
+  const userRole = (currentUser?.role || '').toLowerCase();
+  const isManagerOrAdmin = userRole.includes('admin') || userRole.includes('manager');
+  const isEmployee = !isManagerOrAdmin;
+
   const fetchPerformance = async () => {
     setLoading(true);
     try {
       const now = new Date();
       const res = await api.get(`/performance?timeframe=${timeframe}&year=${now.getFullYear()}&month=${now.getMonth() + 1}`);
-      if (res.success) setPerformanceData(res.data);
+      if (res.success) {
+        let data: EmployeePerformanceData[] = res.data || [];
+        // Ensure non-manager / non-admin user only sees their own performance record
+        if (!isManagerOrAdmin && currentUser) {
+          const userEmail = (currentUser.email || '').toLowerCase().trim();
+          const userName = (currentUser.name || '').toLowerCase().trim();
+          const userEmpId = (currentUser.employeeId || currentUser.id || '').toString().trim().toLowerCase();
+
+          const filtered = data.filter(item => {
+            const empEmail = (item.employee?.email || '').toLowerCase().trim();
+            const empName = (item.employee?.name || '').toLowerCase().trim();
+            const empId = (item.employee?.employeeId || item.employee?.id || '').toString().trim().toLowerCase();
+            return (
+              (empEmail && userEmail && empEmail === userEmail) ||
+              (empId && userEmpId && empId === userEmpId) ||
+              (empName && userName && empName === userName)
+            );
+          });
+          if (filtered.length > 0) {
+            data = filtered;
+          }
+        }
+        setPerformanceData(data);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -118,10 +145,16 @@ export const EmployeePerformanceView: React.FC<EmployeePerformanceViewProps> = (
       const res = await api.get(endpoint);
       if (res.success && res.data && res.data.length > 0) {
         let data = res.data;
-        if (currentUser?.role === 'Employee' && currentUser?.name) {
-          const empNameLower = currentUser.name.toLowerCase();
+        if (!isManagerOrAdmin && currentUser?.name) {
+          const empNameLower = currentUser.name.toLowerCase().trim();
+          const userEmail = (currentUser.email || '').toLowerCase().trim();
+          const userEmpId = (currentUser.employeeId || currentUser.id || '').toString().trim().toLowerCase();
           if (endpoint.includes('employee-summary')) {
-            data = data.filter((item: any) => item.name?.toLowerCase().includes(empNameLower) || item.employeeId === currentUser.id);
+            data = data.filter((item: any) =>
+              (item.name && item.name.toLowerCase().includes(empNameLower)) ||
+              (item.email && item.email.toLowerCase() === userEmail) ||
+              (item.employeeId && item.employeeId.toString().toLowerCase() === userEmpId)
+            );
           } else if (endpoint.includes('daily-posting')) {
             data = data.filter((item: any) => item.employee?.toLowerCase().includes(empNameLower));
           }
@@ -164,10 +197,16 @@ export const EmployeePerformanceView: React.FC<EmployeePerformanceViewProps> = (
       const res = await api.get(endpoint);
       if (res.success) {
         let data = res.data || [];
-        if (currentUser?.role === 'Employee' && currentUser?.name) {
-          const empNameLower = currentUser.name.toLowerCase();
+        if (!isManagerOrAdmin && currentUser?.name) {
+          const empNameLower = currentUser.name.toLowerCase().trim();
+          const userEmail = (currentUser.email || '').toLowerCase().trim();
+          const userEmpId = (currentUser.employeeId || currentUser.id || '').toString().trim().toLowerCase();
           if (tab === 'member-summary') {
-            data = data.filter((item: any) => item.name?.toLowerCase().includes(empNameLower) || item.employeeId === currentUser.id);
+            data = data.filter((item: any) =>
+              (item.name && item.name.toLowerCase().includes(empNameLower)) ||
+              (item.email && item.email.toLowerCase() === userEmail) ||
+              (item.employeeId && item.employeeId.toString().toLowerCase() === userEmpId)
+            );
           } else if (tab === 'daily-posting') {
             data = data.filter((item: any) => item.employee?.toLowerCase().includes(empNameLower));
           }
@@ -180,8 +219,6 @@ export const EmployeePerformanceView: React.FC<EmployeePerformanceViewProps> = (
       setPanelReportLoading(false);
     }
   };
-
-  const isEmployee = currentUser?.role === 'Employee';
 
   const columns: DataTableColumn<EmployeePerformanceData>[] = [
     {
@@ -202,7 +239,7 @@ export const EmployeePerformanceView: React.FC<EmployeePerformanceViewProps> = (
         </div>
       ),
     },
-    ...(!isEmployee ? [{
+    {
       key: 'netMargin',
       label: 'Ad2ship Net Margin',
       sortable: true,
@@ -219,7 +256,7 @@ export const EmployeePerformanceView: React.FC<EmployeePerformanceViewProps> = (
           </div>
         );
       }
-    }] as DataTableColumn<EmployeePerformanceData>[] : []),
+    },
     {
       key: 'targetTier',
       label: 'Incentive Slab',
@@ -324,8 +361,14 @@ export const EmployeePerformanceView: React.FC<EmployeePerformanceViewProps> = (
             <BarChart3 size={22} />
           </div>
           <div>
-            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Performance Analytics</h2>
-            <p className="text-xs font-semibold text-slate-500 mt-0.5">Calculated directly from task completion data & schedules.</p>
+            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+              {isManagerOrAdmin ? 'Performance Analytics' : 'My Performance Analytics'}
+            </h2>
+            <p className="text-xs font-semibold text-slate-500 mt-0.5">
+              {isManagerOrAdmin
+                ? 'Calculated directly from task completion data & schedules.'
+                : 'Your individual monthly quota, target margin progress & incentive earnings.'}
+            </p>
           </div>
         </div>
 
@@ -429,14 +472,12 @@ export const EmployeePerformanceView: React.FC<EmployeePerformanceViewProps> = (
 
                       {/* Net Margin & Slabs Box (Clean Light Theme) */}
                       <div className="p-3.5 bg-gradient-to-br from-slate-50 via-purple-50/40 to-emerald-50/40 border border-slate-200/90 rounded-2xl space-y-2.5 shadow-2xs">
-                        {!isEmployee && (
-                          <div className="flex justify-between items-center text-xs font-bold">
-                            <span className="text-slate-600">Net Ad2ship Margin:</span>
-                            <span className="text-base font-black text-slate-900">
-                              ₹{new Intl.NumberFormat().format(margin)}
-                            </span>
-                          </div>
-                        )}
+                        <div className="flex justify-between items-center text-xs font-bold">
+                          <span className="text-slate-600">Net Ad2ship Margin:</span>
+                          <span className="text-base font-black text-slate-900">
+                            ₹{new Intl.NumberFormat().format(margin)}
+                          </span>
+                        </div>
 
                         <div className="space-y-1">
                           <div className="flex justify-between text-[11px] font-bold text-slate-500">

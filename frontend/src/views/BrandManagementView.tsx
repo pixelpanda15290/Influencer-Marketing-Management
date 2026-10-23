@@ -121,7 +121,8 @@ const CustomIndustrySelect: React.FC<{
 };
 
 export const BrandManagementView: React.FC<BrandManagementViewProps> = ({ userRole }) => {
-  const isEmployee = userRole === 'Employee';
+  const isManagerOrAdmin = userRole === 'Super Admin' || userRole === 'Admin' || userRole === 'Marketing Manager' || userRole === 'Assistant Manager' || userRole === 'Assistant Marketing Manager' || userRole === 'Team Leader';
+  const isEmployee = !isManagerOrAdmin;
   const [brands, setBrands] = useState<Brand[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -464,6 +465,15 @@ export const BrandManagementView: React.FC<BrandManagementViewProps> = ({ userRo
       sortable: true,
       render: (_, row) => {
         const isActive = row.status === 'Active' || !row.status;
+        if (isEmployee) {
+          return (
+            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-black ${
+              isActive ? 'bg-teal-50 text-teal-700 border border-teal-200' : 'bg-slate-100 text-slate-500 border border-slate-200'
+            }`}>
+              {isActive ? 'Active' : 'Inactive'}
+            </span>
+          );
+        }
         return (
           <button
             type="button"
@@ -505,20 +515,24 @@ export const BrandManagementView: React.FC<BrandManagementViewProps> = ({ userRo
           >
             <Eye size={15} />
           </button>
-          <button
-            onClick={() => openEditBrandModal(row)}
-            className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50 transition"
-            title="Edit Brand"
-          >
-            <Edit2 size={15} />
-          </button>
-          <button
-            onClick={() => requestDeleteBrand(row)}
-            className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition"
-            title="Delete Brand"
-          >
-            <Trash2 size={15} />
-          </button>
+          {!isEmployee && (
+            <button
+              onClick={() => openEditBrandModal(row)}
+              className="p-1.5 rounded-lg text-purple-600 hover:bg-purple-50 transition"
+              title="Edit Brand"
+            >
+              <Edit2 size={15} />
+            </button>
+          )}
+          {!isEmployee && (
+            <button
+              onClick={() => requestDeleteBrand(row)}
+              className="p-1.5 rounded-lg text-red-600 hover:bg-red-50 transition"
+              title="Delete Brand"
+            >
+              <Trash2 size={15} />
+            </button>
+          )}
         </div>
       ),
     },
@@ -532,8 +546,8 @@ export const BrandManagementView: React.FC<BrandManagementViewProps> = ({ userRo
             <Briefcase size={22} />
           </div>
           <div>
-            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">{isEmployee ? 'Brand' : 'Brand Portfolio'}</h2>
-            <p className="text-xs font-semibold text-slate-500 mt-0.5">Maintain portfolio of brands handled by the company.</p>
+            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">{isEmployee ? 'My Assigned Brands' : 'Brand Portfolio'}</h2>
+            <p className="text-xs font-semibold text-slate-500 mt-0.5">{isEmployee ? 'Brands assigned to you for content posting and campaigns.' : 'Maintain portfolio of brands handled by the company.'}</p>
           </div>
         </div>
 
@@ -650,7 +664,7 @@ export const BrandManagementView: React.FC<BrandManagementViewProps> = ({ userRo
             columns={columns}
             data={paginatedBrands}
             rowKey="_id"
-            emptyMessage="No brands found matching criteria."
+            emptyMessage={isEmployee ? "No brands have been assigned to your account yet. Contact your Team Leader or Manager to assign brands to you." : "No brands found matching criteria."}
             currentPage={currentPage}
             totalPages={serverTotalPages}
             totalItems={serverTotalItems}

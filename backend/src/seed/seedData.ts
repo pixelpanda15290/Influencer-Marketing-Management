@@ -25,23 +25,32 @@ export const seedDatabase = async () => {
     }
 
     for (const [roleName, permissions] of Object.entries(ROLE_DEFAULT_PERMISSIONS)) {
-      await Role.updateOne(
-        { name: roleName },
-        {
-          $set: { permissions },
-          $setOnInsert: {
-            name: roleName,
-            description: `Default system role for ${roleName}`,
-            isSystemRole: true
-          }
-        },
-        { upsert: true }
-      );
+      const existingRole = await Role.findOne({ name: roleName });
+      if (!existingRole) {
+        await Role.create({
+          name: roleName,
+          description: `Default system role for ${roleName}`,
+          permissions,
+          isSystemRole: true
+        });
+      } else if (
+        roleName === ROLES.SUPER_ADMIN ||
+        roleName === ROLES.ADMIN ||
+        roleName === ROLES.POSTING_EXECUTIVE ||
+        roleName === ROLES.BARTER_EXECUTIVE ||
+        roleName === ROLES.PAID_EXECUTIVE
+      ) {
+        await Role.updateOne(
+          { name: roleName },
+          { $set: { permissions } }
+        );
+      }
     }
 
     // Seed Default Departments and migrate existing Employee records
     const defaultDepts = [
       { name: 'Influencer Marketing', code: 'IM', description: 'Influencer campaign management & outreach' },
+      { name: 'Social Media', code: 'SM', description: 'Social media posting and content management' },
       { name: 'Content Creation', code: 'CC', description: 'Creative content production and design' },
       { name: 'Campaign Strategy', code: 'CS', description: 'Campaign planning and strategic positioning' },
       { name: 'Quality Control', code: 'QC', description: 'Quality assurance and compliance review' },

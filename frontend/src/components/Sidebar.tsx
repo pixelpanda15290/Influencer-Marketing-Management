@@ -28,8 +28,18 @@ interface MenuGroup {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveView, onLogout }) => {
-  const isEmployee = user?.role === 'Employee';
+  const isManagerOrAdmin = user?.role === 'Super Admin' || user?.role === 'Admin' || user?.role === 'Marketing Manager' || user?.role === 'Assistant Manager' || user?.role === 'Assistant Marketing Manager' || user?.role === 'Team Leader';
+  const isEmployee = !isManagerOrAdmin && user?.role !== 'Client';
   const isClient = user?.role === 'Client';
+
+  const userPerms = user?.permissions || [];
+  const isPostingExec = user?.role === 'Posting & Content Executive';
+  const isBarterExec = user?.role === 'Barter Collab Executive';
+  const isPaidExec = user?.role === 'Paid Collab Executive';
+
+  // Determine module visibility
+  const canAccessInfluencers = isManagerOrAdmin || isBarterExec || isPaidExec || user?.role === 'Employee' || userPerms.includes('influencer.view') || userPerms.includes('influencer.paid.view') || userPerms.includes('influencer.barter.view');
+  const canAccessPostings = isManagerOrAdmin || isPostingExec || user?.role === 'Employee' || userPerms.includes('posting.view');
 
   if (isClient) {
     return (
@@ -108,7 +118,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveVie
         { id: 'employee-brands', label: 'Brand Assignments', icon: UserCheck },
       ]
     }] : []),
-    {
+    ...(canAccessPostings ? [{
       id: 'content-tasks',
       label: 'Tasks & Postings',
       icon: CheckSquare,
@@ -116,7 +126,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveVie
         { id: 'calendar', label: 'Posting Calendar', icon: Calendar },
         { id: 'content-calendar', label: 'Content Calendar', icon: FileSpreadsheet },
       ]
-    },
+    }] : []),
     ...(!isEmployee ? [{
       id: 'team-performance',
       label: 'Team & Performance',
@@ -192,40 +202,44 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveVie
         </button>
 
         {/* Single Standalone Item: Targets & Revenue */}
-        <button
-          onClick={() => {
-            setActiveView('targets');
-            window.scrollTo(0, 0);
-          }}
-          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold text-sm transition-all duration-200 ${
-            activeView === 'targets' || activeView === 'influencers'
-              ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-500 text-white shadow-md shadow-purple-500/25'
-              : 'text-slate-700 hover:text-purple-700 hover:bg-purple-50/60 border border-transparent'
-          }`}
-        >
-          <div className="flex items-center space-x-2.5 min-w-0">
-            <Target size={18} className={`shrink-0 ${activeView === 'targets' || activeView === 'influencers' ? 'text-white' : 'text-slate-400'}`} />
-            <span className="whitespace-nowrap truncate">Targets & Revenue</span>
-          </div>
-        </button>
+        {canAccessInfluencers && (
+          <button
+            onClick={() => {
+              setActiveView('targets');
+              window.scrollTo(0, 0);
+            }}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold text-sm transition-all duration-200 ${
+              activeView === 'targets' || activeView === 'influencers'
+                ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-500 text-white shadow-md shadow-purple-500/25'
+                : 'text-slate-700 hover:text-purple-700 hover:bg-purple-50/60 border border-transparent'
+            }`}
+          >
+            <div className="flex items-center space-x-2.5 min-w-0">
+              <Target size={18} className={`shrink-0 ${activeView === 'targets' || activeView === 'influencers' ? 'text-white' : 'text-slate-400'}`} />
+              <span className="whitespace-nowrap truncate">Targets & Revenue</span>
+            </div>
+          </button>
+        )}
 
         {/* Single Standalone Item: Influencer Directory & Discovery */}
-        <button
-          onClick={() => {
-            setActiveView('influencers-directory');
-            window.scrollTo(0, 0);
-          }}
-          className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold text-sm transition-all duration-200 ${
-            activeView === 'influencers-directory'
-              ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-500 text-white shadow-md shadow-purple-500/25'
-              : 'text-slate-700 hover:text-purple-700 hover:bg-purple-50/60 border border-transparent'
-          }`}
-        >
-          <div className="flex items-center space-x-2.5 min-w-0">
-            <Sparkles size={18} className={`shrink-0 ${activeView === 'influencers-directory' ? 'text-white' : 'text-purple-500'}`} />
-            <span className="whitespace-nowrap truncate">Influencers</span>
-          </div>
-        </button>
+        {canAccessInfluencers && (
+          <button
+            onClick={() => {
+              setActiveView('influencers-directory');
+              window.scrollTo(0, 0);
+            }}
+            className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold text-sm transition-all duration-200 ${
+              activeView === 'influencers-directory'
+                ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-500 text-white shadow-md shadow-purple-500/25'
+                : 'text-slate-700 hover:text-purple-700 hover:bg-purple-50/60 border border-transparent'
+            }`}
+          >
+            <div className="flex items-center space-x-2.5 min-w-0">
+              <Sparkles size={18} className={`shrink-0 ${activeView === 'influencers-directory' ? 'text-white' : 'text-purple-500'}`} />
+              <span className="whitespace-nowrap truncate">Influencers</span>
+            </div>
+          </button>
+        )}
 
         {/* Single Standalone Item for Employee: Brand */}
         {isEmployee && (

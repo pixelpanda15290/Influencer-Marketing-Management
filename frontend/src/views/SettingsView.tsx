@@ -29,14 +29,51 @@ const PERMISSION_GROUPS: { moduleName: string; icon: string; permissions: { code
     ]
   },
   {
-    moduleName: 'Campaign Strategy',
-    icon: '🚩',
+    moduleName: 'Daily Postings & Calendar',
+    icon: '⏰',
     permissions: [
-      { code: 'campaign.view', label: 'View Campaign Projects' },
-      { code: 'campaign.create', label: 'Create New Campaigns' },
-      { code: 'campaign.update', label: 'Edit Campaign Requirements & Dates' },
-      { code: 'campaign.delete', label: 'Delete Campaigns' },
-      { code: 'campaign.assign', label: 'Assign Team Members to Campaigns' }
+      { code: 'posting.view', label: 'View Daily Postings & Calendar' },
+      { code: 'posting.create', label: 'Log Daily Content Submissions' },
+      { code: 'posting.update', label: 'Update Posting URLs & Statuses' }
+    ]
+  },
+  {
+    moduleName: 'Influencer - Barter Collaborations',
+    icon: '📦',
+    permissions: [
+      { code: 'influencer.barter.view', label: 'View Barter Collaborations Tab & Records' },
+      { code: 'influencer.barter.create', label: 'Create & Onboard Barter Creators' },
+      { code: 'influencer.barter.update', label: 'Update Barter Parcel & Deliverable Statuses' },
+      { code: 'influencer.barter.delete', label: 'Delete Barter Records' },
+      { code: 'target.barter.view', label: 'View Barter Count Targets & Goals' }
+    ]
+  },
+  {
+    moduleName: 'Influencer - Paid Collaborations',
+    icon: '💰',
+    permissions: [
+      { code: 'influencer.paid.view', label: 'View Paid Collaborations Tab & Records' },
+      { code: 'influencer.paid.create', label: 'Create & Onboard Paid Creators' },
+      { code: 'influencer.paid.update', label: 'Update Paid Commercials, Deliverables & Costs' },
+      { code: 'influencer.paid.delete', label: 'Delete Paid Records' },
+      { code: 'target.paid.view', label: 'View Paid Revenue & Margin Targets' }
+    ]
+  },
+  {
+    moduleName: 'Influencer - Payment Logs & Financial Audits',
+    icon: '🧾',
+    permissions: [
+      { code: 'influencer.payment.view', label: 'Access Payment In/Out Audit Logs & Ledger' }
+    ]
+  },
+  {
+    moduleName: 'Targets & Goals Module',
+    icon: '🎯',
+    permissions: [
+      { code: 'target.view', label: 'View Targets & Performance Slabs' },
+      { code: 'target.create', label: 'Create Monthly Team & Individual Targets' },
+      { code: 'target.update', label: 'Update Target Metrics & Deadlines' },
+      { code: 'target.delete', label: 'Archive / Delete Targets' }
     ]
   },
   {
@@ -48,15 +85,6 @@ const PERMISSION_GROUPS: { moduleName: string; icon: string; permissions: { code
       { code: 'task.update', label: 'Edit & Reassign Tasks' },
       { code: 'task.delete', label: 'Delete Tasks' },
       { code: 'task.verify', label: 'Approve & Verify Submitted Content' }
-    ]
-  },
-  {
-    moduleName: 'Daily Postings & Calendar',
-    icon: '⏰',
-    permissions: [
-      { code: 'posting.view', label: 'View Daily Postings & Calendar' },
-      { code: 'posting.create', label: 'Log Daily Content Submissions' },
-      { code: 'posting.update', label: 'Update Posting URLs & Statuses' }
     ]
   },
   {

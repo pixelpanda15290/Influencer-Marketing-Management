@@ -255,7 +255,13 @@ export const Navbar: React.FC<NavbarProps> = ({ user, onLogout, onRequestLogout,
                     <div className="text-[11px] text-purple-700 font-bold flex items-center gap-1">
                       <Shield size={11} className="text-purple-600 shrink-0" />
                       <span className="truncate">
-                        {user.role === 'Client' ? `Client (${user.brandDetails?.brandName || 'Portal'})` : (user.role === 'Employee' ? 'Member' : user.role)}
+                        {user.role === 'Client'
+                          ? `Client (${user.brandDetails?.brandName || 'Portal'})`
+                          : (user.role && user.role !== 'Employee')
+                            ? user.role
+                            : (user.employeeDetails?.role && user.employeeDetails.role !== 'Employee')
+                              ? user.employeeDetails.role
+                              : (user.employeeDetails?.designation || user.role || 'Team Member')}
                       </span>
                     </div>
                   </div>
@@ -309,14 +315,14 @@ export const Navbar: React.FC<NavbarProps> = ({ user, onLogout, onRequestLogout,
                 <div>
                   <h3 className="text-base font-black text-slate-900">{profileName}</h3>
                   <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-500 font-semibold">
-                    <span>Role: <strong className="text-slate-800 font-extrabold">{user.role}</strong></span>
+                    <span>Role: <strong className="text-slate-800 font-extrabold">{user.role && user.role !== 'Employee' ? user.role : (user.employeeDetails?.role && user.employeeDetails.role !== 'Employee' ? user.employeeDetails.role : (user.employeeDetails?.designation || user.role))}</strong></span>
                     <span>•</span>
                     <span>ID: <strong className="text-slate-800 font-extrabold">{user.employeeId || 'EMP-101'}</strong></span>
                   </div>
                 </div>
               </div>
               <span className="px-3 py-1 rounded-xl bg-purple-100/90 text-purple-900 text-xs font-black border border-purple-200">
-                Active Employee
+                {user.role && user.role !== 'Employee' ? user.role : (user.employeeDetails?.role && user.employeeDetails.role !== 'Employee' ? user.employeeDetails.role : (user.employeeDetails?.designation || user.role || 'Active Employee'))}
               </span>
             </div>
 

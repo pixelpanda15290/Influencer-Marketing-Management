@@ -169,9 +169,11 @@ const BrandSchema = new Schema<IBrand>({
 }, { timestamps: true });
 
 // 6. EmployeeBrand Relationship Schema
+// assignmentType IDs: 1 = Posting & Content, 2 = Barter Collab, 3 = Paid Collab
 export interface IEmployeeBrand extends Document {
   employeeId: mongoose.Types.ObjectId;
   brandId: mongoose.Types.ObjectId;
+  assignmentType: 1 | 2 | 3;
   assignedBy?: mongoose.Types.ObjectId;
   startDate: Date;
   endDate?: Date;
@@ -186,6 +188,7 @@ export interface IEmployeeBrand extends Document {
 const EmployeeBrandSchema = new Schema<IEmployeeBrand>({
   employeeId: { type: Schema.Types.ObjectId, ref: 'Employee', required: true },
   brandId: { type: Schema.Types.ObjectId, ref: 'Brand', required: true },
+  assignmentType: { type: Number, enum: [1, 2, 3], default: 1 },
   assignedBy: { type: Schema.Types.ObjectId, ref: 'User' },
   startDate: { type: Date, default: Date.now },
   endDate: { type: Date },
@@ -199,6 +202,8 @@ const EmployeeBrandSchema = new Schema<IEmployeeBrand>({
 
 EmployeeBrandSchema.index({ employeeId: 1, status: 1 });
 EmployeeBrandSchema.index({ brandId: 1, status: 1 });
+EmployeeBrandSchema.index({ brandId: 1, assignmentType: 1, status: 1 });
+EmployeeBrandSchema.index({ employeeId: 1, assignmentType: 1, status: 1 });
 
 // 7. Task / Content Schema
 export interface ITask extends Document {

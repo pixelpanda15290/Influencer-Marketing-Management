@@ -1,20 +1,24 @@
+import mongoose from 'mongoose';
 import { Router, Response } from 'express';
 import { Employee, Brand, Task, EmployeeBrand } from '../models/allModels';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { checkPermission } from '../middleware/rbac';
 import { getEmployeeForAuthUser } from '../utils/employeeHelper';
+import { isManagerOrAdminRole } from '../config/constants';
 
 const router = Router();
 
 // GET /api/v1/reports/employee-summary
 router.get('/employee-summary', authenticateToken, checkPermission('report.view'), async (req: AuthRequest, res: Response) => {
   try {
-    const isEmployeeRole = req.user?.role?.toLowerCase() === 'employee';
+    const isManagerOrAdmin = isManagerOrAdminRole(req.user?.role);
     let empQuery: any = {};
-    if (isEmployeeRole) {
+    if (!isManagerOrAdmin) {
       const currentEmp = await getEmployeeForAuthUser(req.user);
       if (currentEmp) {
         empQuery._id = currentEmp._id;
+      } else {
+        empQuery._id = new mongoose.Types.ObjectId();
       }
     }
 
@@ -60,9 +64,9 @@ router.get('/employee-summary', authenticateToken, checkPermission('report.view'
 // GET /api/v1/reports/brand-summary
 router.get('/brand-summary', authenticateToken, checkPermission('report.view'), async (req: AuthRequest, res: Response) => {
   try {
-    const isEmployeeRole = req.user?.role?.toLowerCase() === 'employee';
+    const isManagerOrAdmin = isManagerOrAdminRole(req.user?.role);
     let brandQuery: any = {};
-    if (isEmployeeRole) {
+    if (!isManagerOrAdmin) {
       const currentEmp = await getEmployeeForAuthUser(req.user);
       if (currentEmp) {
         const assignments = await EmployeeBrand.find({ employeeId: currentEmp._id, status: 'Active' });
@@ -120,9 +124,9 @@ router.get('/daily-posting', authenticateToken, checkPermission('report.view'), 
   endOfDay.setHours(23, 59, 59, 999);
 
   try {
-    const isEmployeeRole = req.user?.role?.toLowerCase() === 'employee';
+    const isManagerOrAdmin = isManagerOrAdminRole(req.user?.role);
     let taskFilter: any = { scheduledDate: { $gte: startOfDay, $lte: endOfDay } };
-    if (isEmployeeRole) {
+    if (!isManagerOrAdmin) {
       const currentEmp = await getEmployeeForAuthUser(req.user);
       if (currentEmp) {
         const assignments = await EmployeeBrand.find({ employeeId: currentEmp._id, status: 'Active' });
@@ -132,7 +136,7 @@ router.get('/daily-posting', authenticateToken, checkPermission('report.view'), 
           { brandId: { $in: assignedBrandIds } }
         ];
       } else {
-        taskFilter.employeeId = null;
+        taskFilter.employeeId = new mongoose.Types.ObjectId();
       }
     }
 

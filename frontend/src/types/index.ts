@@ -95,10 +95,23 @@ export interface Brand {
   assignedEmployees?: EmployeeBrandAssignment[];
 }
 
+export const BRAND_ASSIGNMENT_TYPES = {
+  POSTING: 1,
+  BARTER: 2,
+  PAID: 3
+} as const;
+
+export const BRAND_ASSIGNMENT_LABELS: Record<number, string> = {
+  1: 'Posting & Content',
+  2: 'Barter Collab',
+  3: 'Paid Collab'
+};
+
 export interface EmployeeBrandAssignment {
   _id: string;
   employeeId: Employee | string;
   brandId: Brand | string;
+  assignmentType?: 1 | 2 | 3;
   assignedBy?: User | string;
   startDate: string;
   endDate?: string;
@@ -229,6 +242,7 @@ export interface MemberTargetItem {
     email: string;
     department?: string | IDepartment;
     designation: string;
+    role?: string;
     assignedBrandsCount: number;
   };
   individualTarget: number;

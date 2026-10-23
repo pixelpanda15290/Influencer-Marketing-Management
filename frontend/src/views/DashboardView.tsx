@@ -31,8 +31,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ user, onNavigate, 
   const itemsPerPage = 6;
   const perfLimit = 10;
 
+  const userRole = (user?.role || '').toLowerCase();
+  const isManagerOrAdmin = userRole.includes('admin') || userRole.includes('manager');
+
   const fetchPerformance = async (page: number = 1) => {
-    if (user?.role === 'Employee') return;
+    if (!isManagerOrAdmin) return;
     setLoadingPerf(true);
     try {
       const perfRes = await api.get(`/performance?page=${page}&limit=${perfLimit}`);
@@ -51,8 +54,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ user, onNavigate, 
 
   const fetchDashboardStats = async () => {
     try {
-      const isEmp = user?.role === 'Employee';
-      
       // Fetch stats first
       const dashRes = await api.get('/dashboard/stats');
       if (dashRes.success) {
@@ -61,7 +62,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ user, onNavigate, 
       }
 
       // Fetch company performance leaderboard ONLY for Manager / Admin roles
-      if (!isEmp) {
+      if (isManagerOrAdmin) {
         await fetchPerformance(1);
       }
     } catch (err) {
@@ -95,7 +96,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ user, onNavigate, 
 
   if (loading) return <PageLoader message="Loading operational dashboard..." />;
 
-  const isEmployee = user?.role === 'Employee';
+  const isEmployee = !isManagerOrAdmin;
 
   // Helper for brand avatars
   const getBrandAvatar = (name: string) => {
@@ -124,7 +125,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ user, onNavigate, 
         <div>
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-100/80 text-purple-800 text-xs font-black mb-2 border border-purple-200">
             <Sparkles size={14} className="text-purple-600" />
-            <span>{isEmployee ? 'Member Operations Portal' : 'Executive Overview'}</span>
+            <span>{isEmployee ? (user?.role && user.role !== 'Employee' ? `${user.role} Portal` : 'Team Member Operations Portal') : 'Executive Overview'}</span>
           </div>
           <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
             Welcome back, {user?.name || 'Vikram Sethi'}! 👋

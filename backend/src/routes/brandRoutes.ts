@@ -5,6 +5,7 @@ import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { checkPermission } from '../middleware/rbac';
 import { logActivity } from '../middleware/auditLog';
 import { getEmployeeForAuthUser } from '../utils/employeeHelper';
+import { getAssignmentTypeFromRole } from '../config/constants';
 
 const router = Router();
 
@@ -15,11 +16,20 @@ router.get('/', authenticateToken, checkPermission('brand.view'), async (req: Au
 
     // Filter brands to ONLY those assigned if the user is an employee or member
     const userRole = (req.user?.role || '').toLowerCase();
-    const isScopedRole = userRole === 'employee' || userRole === 'member';
+    const isScopedRole = userRole === 'employee' || userRole === 'member' || userRole === 'posting & content executive' || userRole === 'barter collab executive' || userRole === 'paid collab executive';
     if (isScopedRole) {
       const emp = await getEmployeeForAuthUser(req.user);
       if (emp) {
-        const assignments = await EmployeeBrand.find({ employeeId: emp._id, status: 'Active', isDeleted: { $ne: true } });
+        const assignFilter: any = { employeeId: emp._id, status: 'Active', isDeleted: { $ne: true } };
+        if (req.query.assignmentType && [1, 2, 3].includes(Number(req.query.assignmentType))) {
+          assignFilter.assignmentType = Number(req.query.assignmentType);
+        } else if (userRole.includes('posting') || userRole.includes('barter') || userRole.includes('paid')) {
+          assignFilter.assignmentType = getAssignmentTypeFromRole(emp.role || emp.designation || req.user?.role);
+        }
+        let assignments = await EmployeeBrand.find(assignFilter);
+        if (assignments.length === 0 && !req.query.assignmentType) {
+          assignments = await EmployeeBrand.find({ employeeId: emp._id, status: 'Active', isDeleted: { $ne: true } });
+        }
         const assignedBrandIds = assignments.map(a => a.brandId);
         filter._id = { $in: assignedBrandIds };
       } else {

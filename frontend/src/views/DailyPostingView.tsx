@@ -68,8 +68,11 @@ export const DailyPostingView: React.FC<DailyPostingViewProps> = ({ currentUser,
             );
             if (matchedEmp) {
               setSelectedEmployee(matchedEmp._id);
-              // Fetch assigned brands for logged-in employee
-              const ebRes = await api.get(`/employee-brands?employeeId=${matchedEmp._id}`);
+              // Fetch assigned brands for logged-in employee (prioritize Posting division 1)
+              let ebRes = await api.get(`/employee-brands?employeeId=${matchedEmp._id}&assignmentType=1`);
+              if (!ebRes.success || !ebRes.data || ebRes.data.length === 0) {
+                ebRes = await api.get(`/employee-brands?employeeId=${matchedEmp._id}`);
+              }
               if (ebRes.success && ebRes.data?.length > 0) {
                 const assignedBrandObjs = ebRes.data.map((a: any) => a.brandId).filter(Boolean);
                 setBrands(assignedBrandObjs);

@@ -1,8 +1,10 @@
+import mongoose from 'mongoose';
 import { Router, Response } from 'express';
 import { Task, Employee, Brand, EmployeeBrand } from '../models/allModels';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { checkPermission } from '../middleware/rbac';
 import { getEmployeeForAuthUser } from '../utils/employeeHelper';
+import { isManagerOrAdminRole } from '../config/constants';
 
 const router = Router();
 
@@ -33,10 +35,14 @@ router.get('/daily', authenticateToken, checkPermission('posting.view'), async (
   if (platform) filter.platform = platform;
   if (status) filter.status = status;
 
-  // Employee role scoping
-  if (req.user?.role === 'Employee' && !employeeId) {
+  // Role scoping: non-managers can only view their own postings
+  const isManagerOrAdmin = isManagerOrAdminRole(req.user?.role);
+  if (!isManagerOrAdmin) {
     const emp = await getEmployeeForAuthUser(req.user);
     if (emp) filter.employeeId = emp._id;
+    else filter.employeeId = new mongoose.Types.ObjectId();
+  } else if (employeeId) {
+    filter.employeeId = employeeId;
   }
 
   try {
@@ -101,9 +107,13 @@ router.get('/calendar', authenticateToken, checkPermission('posting.view'), asyn
   if (contentType) filter.contentType = contentType;
   if (status) filter.status = status;
 
-  if (req.user?.role === 'Employee' && !employeeId) {
+  const isManagerOrAdmin = isManagerOrAdminRole(req.user?.role);
+  if (!isManagerOrAdmin) {
     const emp = await getEmployeeForAuthUser(req.user);
     if (emp) filter.employeeId = emp._id;
+    else filter.employeeId = new mongoose.Types.ObjectId();
+  } else if (employeeId) {
+    filter.employeeId = employeeId;
   }
 
   try {
@@ -135,32 +145,59 @@ router.get('/matrix', authenticateToken, checkPermission('posting.view'), async 
     const endOfMonth = new Date(targetYear, targetMonth + 1, 0, 23, 59, 59);
     const daysInMonth = new Date(targetYear, targetMonth + 1, 0).getDate();
 
-    // Fetch active employees with department populated
-    const employees = await Employee.find({ status: 'Active', isDeleted: { $ne: true } })
-      .populate('department', 'name code description status')
-      .sort({ name: 1 });
+    // Role-based target employee & staff list scoping
+    const isManagerOrAdmin = isManagerOrAdminRole(req.user?.role);
+    const loggedInEmp = await getEmployeeForAuthUser(req.user);
 
-    // Determine target employee
-    let targetEmployeeId = employeeId as string;
-    if (req.user?.role === 'Employee' && !targetEmployeeId) {
-      const emp = await getEmployeeForAuthUser(req.user);
-      if (emp) targetEmployeeId = (emp._id as any).toString();
-    }
-    if (!targetEmployeeId && employees.length > 0) {
-      targetEmployeeId = (employees[0]._id as any).toString();
+    let employees: any[] = [];
+    let targetEmployeeId = '';
+
+    if (!isManagerOrAdmin) {
+      // Non-management: strictly restricted to their own employee account
+      if (loggedInEmp) {
+        employees = [loggedInEmp];
+        targetEmployeeId = (loggedInEmp._id as any).toString();
+      } else {
+        employees = [];
+        targetEmployeeId = '';
+      }
+    } else {
+      // Manager / Assistant Manager / Admin: can view any employee
+      employees = await Employee.find({ status: 'Active', isDeleted: { $ne: true } })
+        .populate('department', 'name code description status')
+        .sort({ name: 1 });
+
+      if (employeeId && typeof employeeId === 'string' && employeeId !== 'all') {
+        targetEmployeeId = employeeId;
+      } else if (loggedInEmp) {
+        // Default to logged-in user if they exist in employees list
+        targetEmployeeId = (loggedInEmp._id as any).toString();
+      } else if (employees.length > 0) {
+        targetEmployeeId = (employees[0]._id as any).toString();
+      }
     }
 
     // Fetch brands assigned to target employee (or all brands if no assignments found)
     let assignedBrandIds: any[] = [];
     if (targetEmployeeId) {
-      const assignments = await EmployeeBrand.find({ employeeId: targetEmployeeId, status: 'Active' });
+      let assignments = await EmployeeBrand.find({
+        employeeId: targetEmployeeId,
+        status: 'Active',
+        assignmentType: 1
+      });
+      if (assignments.length === 0) {
+        assignments = await EmployeeBrand.find({
+          employeeId: targetEmployeeId,
+          status: 'Active'
+        });
+      }
       assignedBrandIds = assignments.map(a => a.brandId);
     }
 
     let brands: any[] = [];
     if (assignedBrandIds.length > 0) {
       brands = await Brand.find({ _id: { $in: assignedBrandIds }, status: 'Active' }).sort({ brandName: 1 });
-    } else if (req.user?.role !== 'Employee') {
+    } else if (isManagerOrAdmin) {
       brands = await Brand.find({ status: 'Active' }).sort({ brandName: 1 });
     } else {
       brands = [];
@@ -234,6 +271,14 @@ router.post('/matrix/toggle', authenticateToken, checkPermission('posting.update
 
     if (!employeeId || !brandId || !date) {
       return res.status(400).json({ success: false, message: 'employeeId, brandId, and date are required' });
+    }
+
+    const isManagerOrAdmin = isManagerOrAdminRole(req.user?.role);
+    if (!isManagerOrAdmin) {
+      const loggedInEmp = await getEmployeeForAuthUser(req.user);
+      if (!loggedInEmp || loggedInEmp._id.toString() !== employeeId.toString()) {
+        return res.status(403).json({ success: false, message: 'Access denied: You can only update your own posting calendar' });
+      }
     }
 
     const now = new Date();
