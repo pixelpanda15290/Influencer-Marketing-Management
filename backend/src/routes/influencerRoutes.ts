@@ -1394,74 +1394,80 @@ router.get('/brand-collaborations', authenticateOrApiKey, async (req: AuthReques
       colabFilter.status = status;
     }
 
-    // Optional Timeframe filter
+    // 4. Timeframe & Month Filter Parser
+    const monthNamesMap: Record<string, number> = {
+      january: 0, jan: 0,
+      february: 1, feb: 1,
+      march: 2, mar: 2,
+      april: 3, apr: 3,
+      may: 4,
+      june: 5, jun: 5,
+      july: 6, jul: 6,
+      august: 7, aug: 7,
+      september: 8, sep: 8, sept: 8,
+      october: 9, oct: 9,
+      november: 10, nov: 10,
+      december: 11, dec: 11
+    };
+
+    const monthTitleNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
     const now = new Date();
     const currentYear = Number(year) || now.getFullYear();
-    const currentMonth = month !== undefined ? Number(month) - 1 : now.getMonth();
 
-    if (timeframe && (timeframe as string).includes('_')) {
-      const parts = (timeframe as string).split('_');
-      const monthNames: Record<string, number> = {
-        january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
-        july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
-      };
-      const mIdx = monthNames[parts[0].toLowerCase()];
-      const yr = Number(parts[1]) || currentYear;
-      if (mIdx !== undefined) {
-        const startOfMonth = new Date(yr, mIdx, 1, 0, 0, 0);
-        const endOfMonth = new Date(yr, mIdx + 1, 0, 23, 59, 59);
-        colabFilter.transactionDate = { $gte: startOfMonth, $lte: endOfMonth };
+    let targetYear: number | null = Number(year) || null;
+    let targetMonthIdx: number | null = null; // 0-11
+
+    const rawTimeframe = timeframe ? String(timeframe).trim().toLowerCase() : '';
+    const rawMonth = month !== undefined && month !== null ? String(month).trim().toLowerCase() : '';
+
+    if (rawMonth === 'all' || rawTimeframe === 'all') {
+      targetMonthIdx = null;
+    } else if (rawTimeframe && rawTimeframe.includes('_')) {
+      const parts = rawTimeframe.split('_');
+      if (monthNamesMap[parts[0]] !== undefined) {
+        targetMonthIdx = monthNamesMap[parts[0]];
+        targetYear = Number(parts[1]) || currentYear;
       }
-    } else if (timeframe === 'monthly' || timeframe === 'Month') {
-      const startOfMonth = new Date(currentYear, currentMonth, 1, 0, 0, 0);
-      const endOfMonth = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59);
-      colabFilter.transactionDate = { $gte: startOfMonth, $lte: endOfMonth };
+    } else if (rawMonth && rawMonth.includes('_')) {
+      const parts = rawMonth.split('_');
+      if (monthNamesMap[parts[0]] !== undefined) {
+        targetMonthIdx = monthNamesMap[parts[0]];
+        targetYear = Number(parts[1]) || currentYear;
+      }
+    } else if (rawMonth && monthNamesMap[rawMonth] !== undefined) {
+      targetMonthIdx = monthNamesMap[rawMonth];
+      targetYear = targetYear || currentYear;
+    } else if (rawMonth && !isNaN(Number(rawMonth)) && Number(rawMonth) >= 1 && Number(rawMonth) <= 12) {
+      targetMonthIdx = Number(rawMonth) - 1;
+      targetYear = targetYear || currentYear;
+    } else if (rawTimeframe && monthNamesMap[rawTimeframe] !== undefined) {
+      targetMonthIdx = monthNamesMap[rawTimeframe];
+      targetYear = targetYear || currentYear;
+    } else if (rawTimeframe === 'monthly' || rawTimeframe === 'month') {
+      targetMonthIdx = now.getMonth();
+      targetYear = targetYear || currentYear;
     }
 
-    // 4. Calculate Aggregate Metrics for this Brand
-    const allMatching = await Influencer.find(colabFilter).lean();
+    // 5. Fetch all matching brand collaborations
+    const allBrandCollabs = await Influencer.find(colabFilter).lean();
 
-    const totalCollaborations = allMatching.length;
-    const paidCollabs = allMatching.filter(c => c.category === 'Paid');
-    const barterCollabs = allMatching.filter(c => c.category === 'Barter');
+    // Helper: Resolve effective date across connectedDate, transactionDate, orderDate, and createdAt
+    const getEffectiveDate = (c: any): Date => {
+      const d = c.transactionDate || c.connectedDate || c.orderDate || (c as any).createdAt;
+      if (!d) return new Date(0);
+      const parsed = new Date(d);
+      return isNaN(parsed.getTime()) ? new Date(0) : parsed;
+    };
 
-    const completedCollabs = allMatching.filter(c =>
-      ['Completed', 'Approved', 'Settled', 'completed', 'approved', 'settled'].includes(c.status)
-    );
-    const inProgressCollabs = allMatching.filter(c =>
-      ['In Discussion', 'Parcel Sent', 'Under Review'].includes(c.status)
-    );
-    const pendingCollabs = allMatching.filter(c =>
-      ['Pending', 'pending'].includes(c.status)
-    );
+    // Sort newest effective date first
+    allBrandCollabs.sort((a, b) => getEffectiveDate(b).getTime() - getEffectiveDate(a).getTime());
 
-    const totalReceivedAmt = paidCollabs.reduce((acc, c) => acc + (c.brandReceivedAmt || c.inAmount || 0), 0);
-    const totalPaidAmt = paidCollabs.reduce((acc, c) => acc + (c.influencerPaidAmt || c.outAmount || 0), 0);
-    const totalMargin = paidCollabs.reduce((acc, c) => acc + (c.ad2shipMargin || 0), 0);
-
-    // 5. Pagination & Fetch (Default: 10 records per page)
-    const pageNum = page ? Math.max(1, Number(page) || 1) : 1;
-    let limitNum = 10;
-    if (limit !== undefined && limit !== null && String(limit).trim() !== '') {
-      const parsedLimit = Number(limit);
-      if (parsedLimit === -1 || String(limit).toLowerCase() === 'all') {
-        limitNum = totalCollaborations > 0 ? totalCollaborations : 10;
-      } else if (!isNaN(parsedLimit) && parsedLimit > 0) {
-        limitNum = Math.min(parsedLimit, 100);
-      }
-    }
-
-    const totalPages = Math.max(1, Math.ceil(totalCollaborations / limitNum));
-    const skipCount = (pageNum - 1) * limitNum;
-
-    const rawList = await Influencer.find(colabFilter)
-      .sort({ transactionDate: -1, createdAt: -1 })
-      .skip(skipCount)
-      .limit(limitNum)
-      .lean();
-
-    // 6. Clean, standardized response payload
-    const formattedCollaborations = rawList.map(c => ({
+    // Helper: Standard clean collaboration formatter
+    const formatCollaboration = (c: any) => ({
       id: c._id,
       influencerName: c.influencerName || 'Creator',
       instagramHandle: c.influencerInstagramId || '',
@@ -1474,7 +1480,7 @@ router.get('/brand-collaborations', authenticateOrApiKey, async (req: AuthReques
       contentLink: c.contentLink || '',
       referenceVideoLink: c.refVideoLink || '',
       handledBy: c.influencerManager || c.assignedExecutive || 'Unassigned',
-      date: c.transactionDate || c.connectedDate || (c as any).createdAt,
+      date: c.transactionDate || c.connectedDate || c.orderDate || (c as any).createdAt,
       orderDate: c.orderDate || null,
       completedAt: c.completedAt || null,
       financials: {
@@ -1488,7 +1494,136 @@ router.get('/brand-collaborations', authenticateOrApiKey, async (req: AuthReques
         ordersCount: c.ordersCount || c.ordersGenerated || 0,
         adsCode: c.adsCode || ''
       }
+    });
+
+    // Helper: Calculate aggregate metrics for any collaboration subset
+    const calculateMetrics = (list: any[]) => {
+      const total = list.length;
+      const paid = list.filter(c => c.category === 'Paid');
+      const barter = list.filter(c => c.category === 'Barter');
+
+      const completed = list.filter(c =>
+        ['Completed', 'Approved', 'Settled', 'completed', 'approved', 'settled'].includes(c.status)
+      );
+      const inProgress = list.filter(c =>
+        ['In Discussion', 'Parcel Sent', 'Under Review'].includes(c.status)
+      );
+      const pending = list.filter(c =>
+        ['Pending', 'pending'].includes(c.status)
+      );
+
+      const totalReceivedAmt = paid.reduce((acc, c) => acc + (c.brandReceivedAmt || c.inAmount || 0), 0);
+      const totalPaidAmt = paid.reduce((acc, c) => acc + (c.influencerPaidAmt || c.outAmount || 0), 0);
+      const totalMargin = paid.reduce((acc, c) => acc + (c.ad2shipMargin || 0), 0);
+
+      return {
+        totalCollaborations: total,
+        paidCount: paid.length,
+        barterCount: barter.length,
+        completedCount: completed.length,
+        inProgressCount: inProgress.length,
+        pendingCount: pending.length,
+        financials: {
+          totalReceivedAmt,
+          totalPaidAmt,
+          totalMargin
+        }
+      };
+    };
+
+    // 6. Build Month-Wise Grouping for All Collaborations of this Brand
+    const monthsMap = new Map<string, {
+      month: string;
+      monthKey: string;
+      year: number;
+      monthNumber: number;
+      sortKey: number;
+      items: any[];
+    }>();
+
+    for (const c of allBrandCollabs) {
+      const d = getEffectiveDate(c);
+      const yr = d.getFullYear() > 1970 ? d.getFullYear() : now.getFullYear();
+      const mIdx = d.getFullYear() > 1970 ? d.getMonth() : now.getMonth();
+      const key = `${monthTitleNames[mIdx].toLowerCase()}_${yr}`;
+      const label = `${monthTitleNames[mIdx]} ${yr}`;
+      const sortKey = yr * 100 + mIdx;
+
+      if (!monthsMap.has(key)) {
+        monthsMap.set(key, {
+          month: label,
+          monthKey: key,
+          year: yr,
+          monthNumber: mIdx + 1,
+          sortKey,
+          items: []
+        });
+      }
+      monthsMap.get(key)!.items.push(c);
+    }
+
+    // 7. Determine Active List & Metrics (Filtered by Month if requested, else All)
+    let selectedMonth = 'All';
+    let activeList = allBrandCollabs;
+
+    if (targetMonthIdx !== null && targetYear !== null) {
+      selectedMonth = `${monthTitleNames[targetMonthIdx]} ${targetYear}`;
+      activeList = allBrandCollabs.filter(c => {
+        const d = getEffectiveDate(c);
+        return d.getFullYear() === targetYear && d.getMonth() === targetMonthIdx;
+      });
+    }
+
+    // Sort month groups newest month first
+    const sortedMonthGroups = Array.from(monthsMap.values()).sort((a, b) => b.sortKey - a.sortKey);
+
+    // If a specific month is requested, filter 'months' and 'byMonth' so they ONLY show that month's collaborations
+    const filteredMonthGroups = (targetMonthIdx !== null && targetYear !== null)
+      ? sortedMonthGroups.filter(g => g.year === targetYear && g.monthNumber === targetMonthIdx + 1)
+      : sortedMonthGroups;
+
+    const months = filteredMonthGroups.map(g => ({
+      month: g.month,
+      monthKey: g.monthKey,
+      year: g.year,
+      monthNumber: g.monthNumber,
+      metrics: calculateMetrics(g.items),
+      collaborations: g.items.map(formatCollaboration)
     }));
+
+    const availableMonths = sortedMonthGroups.map(g => ({
+      month: g.month,
+      monthKey: g.monthKey,
+      year: g.year,
+      monthNumber: g.monthNumber,
+      count: g.items.length
+    }));
+
+    const byMonth: Record<string, any> = {};
+    for (const m of months) {
+      byMonth[m.monthKey] = m;
+    }
+
+    const totalCollaborations = activeList.length;
+    const activeMetrics = calculateMetrics(activeList);
+    const allTimeMetrics = calculateMetrics(allBrandCollabs);
+
+    // 8. Pagination & Fetch (Default: 10 records per page)
+    const pageNum = page ? Math.max(1, Number(page) || 1) : 1;
+    let limitNum = 10;
+    if (limit !== undefined && limit !== null && String(limit).trim() !== '') {
+      const parsedLimit = Number(limit);
+      if (parsedLimit === -1 || String(limit).toLowerCase() === 'all') {
+        limitNum = totalCollaborations > 0 ? totalCollaborations : 10;
+      } else if (!isNaN(parsedLimit) && parsedLimit > 0) {
+        limitNum = Math.min(parsedLimit, 100);
+      }
+    }
+
+    const totalPages = Math.max(1, Math.ceil(totalCollaborations / limitNum));
+    const skipCount = (pageNum - 1) * limitNum;
+    const paginatedList = activeList.slice(skipCount, skipCount + limitNum);
+    const formattedCollaborations = paginatedList.map(formatCollaboration);
 
     return res.status(200).json({
       success: true,
@@ -1502,19 +1637,12 @@ router.get('/brand-collaborations', authenticateOrApiKey, async (req: AuthReques
         status: brandDoc?.status || 'Active',
         assignedTeam
       },
-      metrics: {
-        totalCollaborations,
-        paidCount: paidCollabs.length,
-        barterCount: barterCollabs.length,
-        completedCount: completedCollabs.length,
-        inProgressCount: inProgressCollabs.length,
-        pendingCount: pendingCollabs.length,
-        financials: {
-          totalReceivedAmt,
-          totalPaidAmt,
-          totalMargin
-        }
-      },
+      selectedMonth,
+      availableMonths,
+      metrics: activeMetrics,
+      allTimeMetrics,
+      months,
+      byMonth,
       collaborations: formattedCollaborations,
       pagination: {
         page: pageNum,
