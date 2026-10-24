@@ -1,7 +1,8 @@
 import { Router, Response } from 'express';
+import mongoose from 'mongoose';
 import * as XLSX from 'xlsx';
 import { Influencer, Brand, PaymentLog, Employee, EmployeeBrand, Target, InfluencerDirectory, User } from '../models/allModels';
-import { authenticateToken, AuthRequest } from '../middleware/auth';
+import { authenticateToken, authenticateOrApiKey, AuthRequest } from '../middleware/auth';
 import { checkPermission } from '../middleware/rbac';
 import { logActivity } from '../middleware/auditLog';
 import { getEmployeeForAuthUser } from '../utils/employeeHelper';
@@ -1255,6 +1256,268 @@ router.delete('/bulk-delete', authenticateToken, checkPermission('influencer.del
     });
   } catch (error) {
     return res.status(500).json({ success: false, message: 'Error bulk deleting influencer records', error });
+  }
+});
+
+// GET /api/v1/influencers/brand-collaborations
+// External / Cross-Panel API to fetch brand-wise collaborations for Onboarding Panel / External portals
+router.get('/brand-collaborations', authenticateOrApiKey, async (req: AuthRequest, res: Response) => {
+  try {
+    const {
+      brandName,
+      onboardingBrandId,
+      sellerId,
+      category,
+      status,
+      timeframe,
+      year,
+      month,
+      page,
+      limit
+    } = req.query;
+
+    const rawBrandName = brandName ? String(brandName).trim() : '';
+    const rawOnboardingBrandId = onboardingBrandId !== undefined && onboardingBrandId !== null && String(onboardingBrandId).trim() !== ''
+      ? String(onboardingBrandId).trim()
+      : null;
+    const rawSellerId = sellerId !== undefined && sellerId !== null && String(sellerId).trim() !== ''
+      ? String(sellerId).trim()
+      : null;
+
+    if (!rawBrandName && !rawOnboardingBrandId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Either brandName or onboardingBrandId is required to fetch collaborations.'
+      });
+    }
+
+    // 1. Resolve Brand in MongoDB (Hybrid Option 3):
+    // Primary: Match by onboardingBrandId if provided
+    let brandDoc: any = null;
+    if (rawOnboardingBrandId) {
+      brandDoc = await Brand.findOne({
+        isDeleted: { $ne: true },
+        $or: [
+          { onboardingBrandId: rawOnboardingBrandId },
+          { onboardingBrandId: Number(rawOnboardingBrandId) || -999999 }
+        ]
+      });
+    }
+
+    // Fallback: Match by normalized brandName (case-insensitive regex)
+    if (!brandDoc && rawBrandName) {
+      const nameRegex = new RegExp(`^${escapeRegex(rawBrandName)}$`, 'i');
+      brandDoc = await Brand.findOne({
+        isDeleted: { $ne: true },
+        brandName: nameRegex
+      });
+
+      // Flexible stripped-whitespace match (e.g. "Art of colours" vs "Art Of Colours")
+      if (!brandDoc) {
+        const stripped = rawBrandName.replace(/\s+/g, '');
+        const strippedRegex = new RegExp(`^${escapeRegex(stripped)}$`, 'i');
+        brandDoc = await Brand.findOne({
+          isDeleted: { $ne: true },
+          brandName: strippedRegex
+        });
+      }
+
+      // Auto-Link: When brand is matched by name and onboardingBrandId is provided, save link permanently
+      if (brandDoc && rawOnboardingBrandId) {
+        let needsSave = false;
+        if (!brandDoc.onboardingBrandId || String(brandDoc.onboardingBrandId) !== rawOnboardingBrandId) {
+          brandDoc.onboardingBrandId = Number(rawOnboardingBrandId) || rawOnboardingBrandId;
+          needsSave = true;
+        }
+        if (rawSellerId && (!brandDoc.sellerId || String(brandDoc.sellerId) !== rawSellerId)) {
+          brandDoc.sellerId = Number(rawSellerId) || rawSellerId;
+          needsSave = true;
+        }
+        if (needsSave) {
+          await brandDoc.save();
+        }
+      }
+    }
+
+    const targetBrandName = brandDoc ? brandDoc.brandName : rawBrandName;
+
+    // 2. Fetch Active Assigned Team Members for this Brand (Posting, Barter, Paid)
+    const assignedTeam: {
+      postingExecutive: any;
+      barterExecutive: any;
+      paidExecutive: any;
+    } = {
+      postingExecutive: null,
+      barterExecutive: null,
+      paidExecutive: null
+    };
+
+    if (brandDoc) {
+      const activeAssignments = await EmployeeBrand.find({
+        brandId: brandDoc._id,
+        status: 'Active'
+      }).populate('employeeId', 'name designation email phone').lean();
+
+      for (const asgn of activeAssignments) {
+        const emp = asgn.employeeId as any;
+        if (!emp) continue;
+        const type = asgn.assignmentType || 1;
+        const empSummary = {
+          id: emp._id,
+          name: emp.name,
+          designation: emp.designation,
+          email: emp.email,
+          phone: emp.phone
+        };
+        if (type === 1 && !assignedTeam.postingExecutive) assignedTeam.postingExecutive = empSummary;
+        if (type === 2 && !assignedTeam.barterExecutive) assignedTeam.barterExecutive = empSummary;
+        if (type === 3 && !assignedTeam.paidExecutive) assignedTeam.paidExecutive = empSummary;
+      }
+    }
+
+    // 3. Build Collaborations Query Filter
+    const colabFilter: any = { isDeleted: { $ne: true } };
+
+    if (brandDoc) {
+      colabFilter.$or = [
+        { brandId: brandDoc._id },
+        { brandName: new RegExp(`^${escapeRegex(brandDoc.brandName.trim())}$`, 'i') }
+      ];
+    } else {
+      colabFilter.brandName = new RegExp(`^${escapeRegex(targetBrandName)}$`, 'i');
+    }
+
+    if (category && category !== 'All') {
+      colabFilter.category = category;
+    }
+    if (status && status !== 'All') {
+      colabFilter.status = status;
+    }
+
+    // Optional Timeframe filter
+    const now = new Date();
+    const currentYear = Number(year) || now.getFullYear();
+    const currentMonth = month !== undefined ? Number(month) - 1 : now.getMonth();
+
+    if (timeframe && (timeframe as string).includes('_')) {
+      const parts = (timeframe as string).split('_');
+      const monthNames: Record<string, number> = {
+        january: 0, february: 1, march: 2, april: 3, may: 4, june: 5,
+        july: 6, august: 7, september: 8, october: 9, november: 10, december: 11
+      };
+      const mIdx = monthNames[parts[0].toLowerCase()];
+      const yr = Number(parts[1]) || currentYear;
+      if (mIdx !== undefined) {
+        const startOfMonth = new Date(yr, mIdx, 1, 0, 0, 0);
+        const endOfMonth = new Date(yr, mIdx + 1, 0, 23, 59, 59);
+        colabFilter.transactionDate = { $gte: startOfMonth, $lte: endOfMonth };
+      }
+    } else if (timeframe === 'monthly' || timeframe === 'Month') {
+      const startOfMonth = new Date(currentYear, currentMonth, 1, 0, 0, 0);
+      const endOfMonth = new Date(currentYear, currentMonth + 1, 0, 23, 59, 59);
+      colabFilter.transactionDate = { $gte: startOfMonth, $lte: endOfMonth };
+    }
+
+    // 4. Calculate Aggregate Metrics for this Brand
+    const allMatching = await Influencer.find(colabFilter).lean();
+
+    const totalCollaborations = allMatching.length;
+    const paidCollabs = allMatching.filter(c => c.category === 'Paid');
+    const barterCollabs = allMatching.filter(c => c.category === 'Barter');
+
+    const completedCollabs = allMatching.filter(c =>
+      ['Completed', 'Approved', 'Settled', 'completed', 'approved', 'settled'].includes(c.status)
+    );
+    const inProgressCollabs = allMatching.filter(c =>
+      ['In Discussion', 'Parcel Sent', 'Under Review'].includes(c.status)
+    );
+    const pendingCollabs = allMatching.filter(c =>
+      ['Pending', 'pending'].includes(c.status)
+    );
+
+    const totalReceivedAmt = paidCollabs.reduce((acc, c) => acc + (c.brandReceivedAmt || c.inAmount || 0), 0);
+    const totalPaidAmt = paidCollabs.reduce((acc, c) => acc + (c.influencerPaidAmt || c.outAmount || 0), 0);
+    const totalMargin = paidCollabs.reduce((acc, c) => acc + (c.ad2shipMargin || 0), 0);
+
+    // 5. Pagination & Fetch
+    const pageNum = page ? Math.max(1, Number(page)) : undefined;
+    const limitNum = limit ? Math.max(1, Number(limit)) : undefined;
+
+    let query = Influencer.find(colabFilter).sort({ transactionDate: -1, createdAt: -1 });
+    if (pageNum !== undefined && limitNum !== undefined) {
+      query = query.skip((pageNum - 1) * limitNum).limit(limitNum);
+    }
+    const rawList = await query.lean();
+
+    // 6. Clean, standardized response payload
+    const formattedCollaborations = rawList.map(c => ({
+      id: c._id,
+      influencerName: c.influencerName || 'Creator',
+      instagramHandle: c.influencerInstagramId || '',
+      profileLink: c.profileLink || '',
+      category: c.category || 'Barter',
+      status: c.status || 'Pending',
+      deliverableType: c.videoType || 'Post',
+      videoDescription: c.videoDescription || '',
+      productLink: c.productLink || '',
+      contentLink: c.contentLink || '',
+      referenceVideoLink: c.refVideoLink || '',
+      handledBy: c.influencerManager || c.assignedExecutive || 'Unassigned',
+      date: c.transactionDate || c.connectedDate || (c as any).createdAt,
+      orderDate: c.orderDate || null,
+      completedAt: c.completedAt || null,
+      financials: {
+        brandOnboardingAmt: c.brandOnboardingAmt || 0,
+        brandReceivedAmt: c.brandReceivedAmt || c.inAmount || 0,
+        influencerPaidAmt: c.influencerPaidAmt || c.outAmount || 0,
+        margin: c.ad2shipMargin || 0
+      },
+      performance: {
+        viewsCount: c.viewsCount || 0,
+        ordersCount: c.ordersCount || c.ordersGenerated || 0,
+        adsCode: c.adsCode || ''
+      }
+    }));
+
+    return res.status(200).json({
+      success: true,
+      brand: {
+        id: brandDoc?._id || null,
+        brandId: brandDoc?.brandId || null,
+        brandName: targetBrandName,
+        onboardingBrandId: brandDoc?.onboardingBrandId || (rawOnboardingBrandId ? Number(rawOnboardingBrandId) || rawOnboardingBrandId : null),
+        sellerId: brandDoc?.sellerId || (rawSellerId ? Number(rawSellerId) || rawSellerId : null),
+        industry: brandDoc?.industry || '',
+        status: brandDoc?.status || 'Active',
+        assignedTeam
+      },
+      metrics: {
+        totalCollaborations,
+        paidCount: paidCollabs.length,
+        barterCount: barterCollabs.length,
+        completedCount: completedCollabs.length,
+        inProgressCount: inProgressCollabs.length,
+        pendingCount: pendingCollabs.length,
+        financials: {
+          totalReceivedAmt,
+          totalPaidAmt,
+          totalMargin
+        }
+      },
+      pagination: {
+        page: pageNum || 1,
+        limit: limitNum || totalCollaborations,
+        total: totalCollaborations,
+        totalPages: limitNum ? Math.max(1, Math.ceil(totalCollaborations / limitNum)) : 1
+      },
+      collaborations: formattedCollaborations
+    });
+  } catch (error: any) {
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching brand collaborations',
+      error: error?.message || error
+    });
   }
 });
 

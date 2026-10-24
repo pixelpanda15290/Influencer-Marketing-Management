@@ -142,6 +142,8 @@ export interface IBrand extends Document {
   targetPaidCollabs: number;
   targetTotalCollabs: number;
   notes?: string;
+  onboardingBrandId?: any;
+  sellerId?: any;
   isDeleted?: boolean;
   deletedAt?: Date;
   deletedBy?: mongoose.Types.ObjectId;
@@ -163,6 +165,8 @@ const BrandSchema = new Schema<IBrand>({
   targetPaidCollabs: { type: Number, default: 3 },
   targetTotalCollabs: { type: Number, default: 10 },
   notes: { type: String },
+  onboardingBrandId: { type: Schema.Types.Mixed, index: true },
+  sellerId: { type: Schema.Types.Mixed, index: true },
   isDeleted: { type: Boolean, default: false },
   deletedAt: { type: Date },
   deletedBy: { type: Schema.Types.ObjectId, ref: 'User' }
@@ -460,6 +464,8 @@ export interface IInfluencer extends Document {
   isDeleted?: boolean;
   deletedAt?: Date;
   deletedBy?: mongoose.Types.ObjectId;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 const InfluencerSchema = new Schema<IInfluencer>({

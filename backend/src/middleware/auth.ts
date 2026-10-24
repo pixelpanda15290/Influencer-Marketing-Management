@@ -50,3 +50,12 @@ export const authenticateToken = async (req: AuthRequest, res: Response, next: N
     return res.status(403).json({ success: false, message: 'Invalid or expired token' });
   }
 };
+
+export const authenticateOrApiKey = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  const apiKey = req.headers['x-api-key'];
+  const validKey = process.env.INTERNAL_SERVICE_KEY;
+  if (validKey && apiKey && apiKey === validKey) {
+    return next();
+  }
+  return authenticateToken(req, res, next);
+};
