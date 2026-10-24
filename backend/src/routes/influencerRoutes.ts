@@ -1439,15 +1439,26 @@ router.get('/brand-collaborations', authenticateOrApiKey, async (req: AuthReques
     const totalPaidAmt = paidCollabs.reduce((acc, c) => acc + (c.influencerPaidAmt || c.outAmount || 0), 0);
     const totalMargin = paidCollabs.reduce((acc, c) => acc + (c.ad2shipMargin || 0), 0);
 
-    // 5. Pagination & Fetch
-    const pageNum = page ? Math.max(1, Number(page)) : undefined;
-    const limitNum = limit ? Math.max(1, Number(limit)) : undefined;
-
-    let query = Influencer.find(colabFilter).sort({ transactionDate: -1, createdAt: -1 });
-    if (pageNum !== undefined && limitNum !== undefined) {
-      query = query.skip((pageNum - 1) * limitNum).limit(limitNum);
+    // 5. Pagination & Fetch (Default: 10 records per page)
+    const pageNum = page ? Math.max(1, Number(page) || 1) : 1;
+    let limitNum = 10;
+    if (limit !== undefined && limit !== null && String(limit).trim() !== '') {
+      const parsedLimit = Number(limit);
+      if (parsedLimit === -1 || String(limit).toLowerCase() === 'all') {
+        limitNum = totalCollaborations > 0 ? totalCollaborations : 10;
+      } else if (!isNaN(parsedLimit) && parsedLimit > 0) {
+        limitNum = Math.min(parsedLimit, 100);
+      }
     }
-    const rawList = await query.lean();
+
+    const totalPages = Math.max(1, Math.ceil(totalCollaborations / limitNum));
+    const skipCount = (pageNum - 1) * limitNum;
+
+    const rawList = await Influencer.find(colabFilter)
+      .sort({ transactionDate: -1, createdAt: -1 })
+      .skip(skipCount)
+      .limit(limitNum)
+      .lean();
 
     // 6. Clean, standardized response payload
     const formattedCollaborations = rawList.map(c => ({
@@ -1504,13 +1515,13 @@ router.get('/brand-collaborations', authenticateOrApiKey, async (req: AuthReques
           totalMargin
         }
       },
+      collaborations: formattedCollaborations,
       pagination: {
-        page: pageNum || 1,
-        limit: limitNum || totalCollaborations,
+        page: pageNum,
+        limit: limitNum,
         total: totalCollaborations,
-        totalPages: limitNum ? Math.max(1, Math.ceil(totalCollaborations / limitNum)) : 1
-      },
-      collaborations: formattedCollaborations
+        totalPages
+      }
     });
   } catch (error: any) {
     return res.status(500).json({
