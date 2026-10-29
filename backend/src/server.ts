@@ -38,6 +38,7 @@ import syncRoutes from './routes/syncRoutes';
 import instagramRoutes from './routes/instagramRoutes';
 import clientRoutes from './routes/clientRoutes';
 import { syncBarterFromGoogleSheet } from './services/googleSheetSyncService';
+import { GoogleSheetConfig } from './models/allModels';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -111,15 +112,23 @@ const startServer = async () => {
     await connectDB();
     await seedDatabase();
 
-    // Start Background Google Sheet Auto-Sync Worker (runs every 60 seconds)
+    // Start Background Google Sheet Auto-Sync Worker (runs every 60 seconds if configured)
     console.log('[Cron Worker] Initializing Google Sheet Auto-Sync worker...');
-    setTimeout(() => {
-      syncBarterFromGoogleSheet().catch(() => { });
+    setTimeout(async () => {
+      try {
+        const conf = await GoogleSheetConfig.findOne();
+        if (conf && conf.autoSyncEnabled && conf.sheetUrl && conf.sheetUrl.trim().length > 10) {
+          await syncBarterFromGoogleSheet();
+        }
+      } catch (err) { }
     }, 5000);
 
     setInterval(async () => {
       try {
-        await syncBarterFromGoogleSheet();
+        const conf = await GoogleSheetConfig.findOne();
+        if (conf && conf.autoSyncEnabled && conf.sheetUrl && conf.sheetUrl.trim().length > 10) {
+          await syncBarterFromGoogleSheet();
+        }
       } catch (err) {
         // Prevent poller exceptions from bubbling up
       }

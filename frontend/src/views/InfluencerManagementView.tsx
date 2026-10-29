@@ -6,7 +6,7 @@ import {
   Award, Clock, AlertCircle, AlertTriangle, CheckCircle2, ShieldCheck, Layers, RefreshCw, Users,
   Calendar, ChevronLeft, ChevronRight, CalendarDays, Loader2, Lock, Settings, X,
   Activity, Shield, Package, MessageSquare, Info, LayoutGrid, List,
-  Upload, Download, FileSpreadsheet, FileUp, Copy, Check, Building2, History
+  Upload, Download, FileSpreadsheet, FileUp, Copy, Check, Building2, History, Unlink
 } from 'lucide-react';
 import { api } from '../services/api';
 import { InfluencerTransaction, Brand, Employee, PaymentLogItem, TargetItem, TeamTargetBreakdown, MemberTargetItem, AuditLogItem } from '../types';
@@ -950,6 +950,25 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
       }
     } catch (err: any) {
       alert(err.message || 'Error saving sync config');
+    } finally {
+      setIsSyncingSheet(false);
+    }
+  };
+
+  const handleUnlinkSheet = async () => {
+    if (!window.confirm('Are you sure you want to unlink the Google Sheet? Auto-sync will stop immediately.')) return;
+    setIsSyncingSheet(true);
+    try {
+      const res = await api.post('/sync/unlink', {});
+      if (res.success) {
+        setSyncStatus(prev => prev ? { ...prev, isConfigured: false, autoSyncEnabled: false } : null);
+        fetchSyncStatus();
+        alert('Google Sheet unlinked successfully! Automatic sync is now disabled.');
+      } else {
+        alert(res.message || 'Failed to unlink Google Sheet');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error unlinking Google Sheet');
     } finally {
       setIsSyncingSheet(false);
     }
@@ -3555,21 +3574,57 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
 
                 {viewMode === 'Barter Collaborations' && (
                   <div className="flex items-center gap-2 bg-purple-50/80 p-1.5 rounded-xl border border-purple-100">
-                    <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      Auto-Sync Active (60s)
-                    </span>
+                    {syncStatus?.isConfigured && syncStatus?.autoSyncEnabled ? (
+                      <>
+                        <span className="text-[10px] font-black px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800 flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          Auto-Sync Active (60s)
+                        </span>
 
-                    <button
-                      type="button"
-                      onClick={handleTriggerSync}
-                      disabled={isSyncingSheet}
-                      className="px-3 py-1.5 bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-black flex items-center gap-1 shadow-2xs transition disabled:opacity-50 cursor-pointer"
-                      title="Sync latest rows from Google Sheet now"
-                    >
-                      <RefreshCw size={13} className={isSyncingSheet ? "animate-spin text-purple-600" : "text-purple-600"} />
-                      <span>{isSyncingSheet ? "Syncing..." : "Sync Sheet Now"}</span>
-                    </button>
+                        <button
+                          type="button"
+                          onClick={handleTriggerSync}
+                          disabled={isSyncingSheet}
+                          className="px-3 py-1.5 bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-black flex items-center gap-1 shadow-2xs transition disabled:opacity-50 cursor-pointer"
+                          title="Sync latest rows from Google Sheet now"
+                        >
+                          <RefreshCw size={13} className={isSyncingSheet ? "animate-spin text-purple-600" : "text-purple-600"} />
+                          <span>{isSyncingSheet ? "Syncing..." : "Sync Sheet Now"}</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={handleUnlinkSheet}
+                          disabled={isSyncingSheet}
+                          className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-xs font-black flex items-center gap-1 shadow-2xs transition disabled:opacity-50 cursor-pointer"
+                          title="Unlink Google Sheet and stop automatic syncing"
+                        >
+                          <Unlink size={13} />
+                          <span>Unlink Sheet</span>
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-[10px] font-black px-2.5 py-1 rounded-md bg-slate-200 text-slate-700 flex items-center gap-1.5 font-bold">
+                          <span className="w-2 h-2 rounded-full bg-slate-400" />
+                          Google Sheet Unlinked
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInputSheetUrl(syncStatus?.maskedUrl || '');
+                            setInputAutoSync(true);
+                            setShowSyncConfigModal(true);
+                          }}
+                          className="px-3 py-1.5 bg-white hover:bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-xs font-black flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                          title="Link a Google Sheet URL"
+                        >
+                          <Link2 size={13} />
+                          <span>Link Sheet</span>
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -6247,6 +6302,64 @@ export const InfluencerManagementView: React.FC<InfluencerManagementViewProps> =
             </button>
           </div>
         </div>
+      </Modal>
+
+      {/* GOOGLE SHEET SYNC CONFIGURATION MODAL */}
+      <Modal
+        isOpen={showSyncConfigModal}
+        onClose={() => setShowSyncConfigModal(false)}
+        title="Link Google Sheet for Barter Collaborations"
+        maxWidth="max-w-lg"
+      >
+        <form onSubmit={handleSaveSyncConfig} className="space-y-4">
+          <p className="text-xs text-slate-600 font-medium leading-relaxed">
+            Provide your Google Sheet URL (Public or Shared with Google Service Account) to link and sync Barter records automatically.
+          </p>
+
+          <div>
+            <label className="block text-xs font-extrabold text-slate-700 mb-1">
+              Google Sheet URL
+            </label>
+            <input
+              type="url"
+              required
+              placeholder="https://docs.google.com/spreadsheets/d/..."
+              value={inputSheetUrl}
+              onChange={(e) => setInputSheetUrl(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-purple-500 focus:outline-hidden"
+            />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="checkbox"
+              id="enableAutoSyncCheck"
+              checked={inputAutoSync}
+              onChange={(e) => setInputAutoSync(e.target.checked)}
+              className="w-4 h-4 rounded-md text-purple-600 focus:ring-purple-500 border-slate-300"
+            />
+            <label htmlFor="enableAutoSyncCheck" className="text-xs font-bold text-slate-700 cursor-pointer">
+              Enable background auto-sync (polls every 60 seconds)
+            </label>
+          </div>
+
+          <div className="pt-3 border-t border-slate-100 flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setShowSyncConfigModal(false)}
+              className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs hover:bg-slate-200 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSyncingSheet}
+              className="px-5 py-2 rounded-xl bg-purple-600 text-white font-bold text-xs hover:bg-purple-700 shadow-sm transition disabled:opacity-50 cursor-pointer"
+            >
+              {isSyncingSheet ? 'Linking & Syncing...' : 'Save & Link Sheet'}
+            </button>
+          </div>
+        </form>
       </Modal>
     </div>
   );

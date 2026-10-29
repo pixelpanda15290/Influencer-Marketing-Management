@@ -21,7 +21,8 @@ router.get('/status', authenticateToken, async (req: AuthRequest, res: Response)
 
     // Mask secret URL for security (only expose masked domain/sheet ID to client)
     let maskedUrl = '';
-    if (config.sheetUrl) {
+    const hasActiveUrl = !!(config.sheetUrl && config.sheetUrl.trim().length > 10);
+    if (hasActiveUrl) {
       const matches = config.sheetUrl.match(/\/d\/([a-zA-Z0-9-_]+)/);
       if (matches && matches[1]) {
         maskedUrl = `https://docs.google.com/spreadsheets/d/${matches[1].slice(0, 8)}.../gviz`;
@@ -33,9 +34,9 @@ router.get('/status', authenticateToken, async (req: AuthRequest, res: Response)
     return res.status(200).json({
       success: true,
       data: {
-        isConfigured: !!(config.sheetUrl || process.env.GOOGLE_SHEET_BARTER_URL),
+        isConfigured: hasActiveUrl && config.autoSyncEnabled,
         maskedUrl,
-        autoSyncEnabled: config.autoSyncEnabled,
+        autoSyncEnabled: hasActiveUrl ? config.autoSyncEnabled : false,
         syncIntervalSeconds: config.syncIntervalSeconds,
         lastSyncedAt: config.lastSyncedAt,
         lastSyncedCount: config.lastSyncedCount,
@@ -48,9 +49,48 @@ router.get('/status', authenticateToken, async (req: AuthRequest, res: Response)
   }
 });
 
+// POST /api/v1/sync/unlink - Disconnect and disable Google Sheet sync
+router.post('/unlink', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    let config = await GoogleSheetConfig.findOne();
+    if (!config) {
+      config = new GoogleSheetConfig();
+    }
+
+    config.sheetUrl = '';
+    config.sheetId = '';
+    config.autoSyncEnabled = false;
+    config.lastSyncStatus = 'IDLE';
+    config.lastSyncMessage = 'Google Sheet has been unlinked.';
+    config.updatedBy = req.user?._id;
+
+    await config.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Google Sheet unlinked successfully. Automatic sync has been stopped.',
+      data: {
+        isConfigured: false,
+        autoSyncEnabled: false
+      }
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: 'Error unlinking Google Sheet', error: error.message });
+  }
+});
+
 // POST /api/v1/sync/trigger - Trigger immediate sync with Google Sheet
 router.post('/trigger', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
+    const config = await GoogleSheetConfig.findOne();
+    if (!config || !config.sheetUrl || config.sheetUrl.trim().length <= 10 || !config.autoSyncEnabled) {
+      return res.status(400).json({
+        success: false,
+        syncedCount: 0,
+        message: 'Google Sheet is currently unlinked. Please link a Google Sheet first.'
+      });
+    }
+
     const result = await syncBarterFromGoogleSheet();
     return res.status(200).json({
       success: result.success,

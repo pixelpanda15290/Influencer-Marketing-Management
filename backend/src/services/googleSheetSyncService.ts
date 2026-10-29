@@ -444,24 +444,33 @@ export async function syncBarterFromGoogleSheet(): Promise<{
     if (!config) {
       config = await GoogleSheetConfig.create({
         sheetUrl: defaultUrl,
-        autoSyncEnabled: true,
+        autoSyncEnabled: !!defaultUrl,
         syncIntervalSeconds: 60,
         lastSyncStatus: 'IDLE'
       });
+    }
+
+    // If sync is explicitly disabled or sheet is unlinked, skip immediately
+    if (config.autoSyncEnabled === false || (!config.sheetUrl && !defaultUrl)) {
+      return {
+        success: false,
+        syncedCount: 0,
+        message: 'Google Sheet is unlinked. Automatic synchronization is inactive.'
+      };
     }
 
     const targetUrl = (config && config.sheetUrl && config.sheetUrl.trim().length > 10)
       ? config.sheetUrl.trim()
       : defaultUrl;
 
-    if (!targetUrl || targetUrl.includes('AKfycbwNv3pDStT-kRQ4zlQ9bB0snEfxqgZ--6BNarou3RNR3KWY6qebp4Uq94jerw7_5xJHaw')) {
+    if (!targetUrl || targetUrl.trim().length <= 10 || targetUrl.includes('AKfycbwNv3pDStT-kRQ4zlQ9bB0snEfxqgZ--6BNarou3RNR3KWY6qebp4Uq94jerw7_5xJHaw')) {
       config.lastSyncStatus = 'IDLE';
-      config.lastSyncMessage = 'Waiting for new Google Sheet URL to be configured.';
+      config.lastSyncMessage = 'Google Sheet is unlinked.';
       await config.save();
       return {
         success: false,
         syncedCount: 0,
-        message: 'No active Google Sheet URL configured. Please provide the new sheet URL.'
+        message: 'No active Google Sheet URL configured. Sheet is currently unlinked.'
       };
     }
 
