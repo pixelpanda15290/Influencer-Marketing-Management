@@ -3,17 +3,20 @@ import {
   Users, Search, Filter, Plus, ExternalLink, Instagram, Phone, Mail,
   Star, Award, TrendingUp, Sparkles, CheckCircle2, Bookmark, Check, X,
   Trash2, Edit2, ShieldCheck, MapPin, MessageSquare, Layers, Eye, RefreshCw, Briefcase,
-  Heart, MessageCircle, BarChart2, Globe, SlidersHorizontal, UserCheck, AlertCircle, Grid, Table as TableIcon
+  Heart, MessageCircle, BarChart2, Globe, SlidersHorizontal, UserCheck, AlertCircle, Grid, Table as TableIcon,
+  UserPlus
 } from 'lucide-react';
 import { api } from '../services/api';
 import { InfluencerDirectoryItem } from '../types';
 import { Modal } from '../components/Modal';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { DataTable, DataTableColumn } from '../components/DataTable';
+import { InfluencerApplicationsView } from './InfluencerApplicationsView';
 
 interface InfluencerDirectoryViewProps {
   userRole?: string;
   currentUser?: any;
+  initialTab?: 'directory' | 'applications';
 }
 
 const CATEGORIES = [
@@ -28,7 +31,35 @@ const CATEGORIES = [
   { id: 'Entertainment', label: 'Entertainment & Comedy', icon: '🎬' }
 ];
 
-export const InfluencerDirectoryView: React.FC<InfluencerDirectoryViewProps> = ({ userRole, currentUser }) => {
+export const InfluencerDirectoryView: React.FC<InfluencerDirectoryViewProps> = ({ userRole, currentUser, initialTab = 'directory' }) => {
+  // Navigation Tabs: Directory vs Application & Allocation
+  const [activeTab, setActiveTab] = useState<'directory' | 'applications'>(initialTab);
+
+  // Inbound Applications Stats for Header Metric Card
+  const [pendingAppsCount, setPendingAppsCount] = useState<number>(0);
+  const [totalAppsCount, setTotalAppsCount] = useState<number>(0);
+
+  const fetchAppStats = async () => {
+    try {
+      const res = await api.get('/influencer-applications?limit=1');
+      if (res.success && res.stats) {
+        setPendingAppsCount(res.stats.pending || 0);
+        setTotalAppsCount(res.stats.total || 0);
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  useEffect(() => {
+    fetchAppStats();
+  }, []);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
   // Database Directory State & Pagination
   const [directoryItems, setDirectoryItems] = useState<InfluencerDirectoryItem[]>([]);
   const [loadingDirectory, setLoadingDirectory] = useState(false);
@@ -637,7 +668,7 @@ export const InfluencerDirectoryView: React.FC<InfluencerDirectoryViewProps> = (
   ];
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className="space-y-4 pb-12">
       {/* Toast Alert Notification */}
       {toastMessage && (
         <div className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 animate-in fade-in slide-in-from-bottom-5 border border-purple-500/30">
@@ -646,42 +677,103 @@ export const InfluencerDirectoryView: React.FC<InfluencerDirectoryViewProps> = (
         </div>
       )}
 
-      {/* Main Header Banner (Light Elegant Design) */}
-      <div className="relative overflow-hidden rounded-3xl bg-white border border-slate-200/90 p-6 sm:p-8 shadow-xs">
-        <div className="absolute top-0 right-0 -mt-10 -mr-10 w-72 h-72 bg-purple-50 rounded-full blur-3xl pointer-events-none" />
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+      {/* Main Header Banner (Sleek, Compact & Proportional) */}
+      <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200/90 p-5 sm:p-6 shadow-xs">
+        <div className="absolute top-0 right-0 -mt-10 -mr-10 w-64 h-64 bg-purple-50/60 rounded-full blur-3xl pointer-events-none" />
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-50 border border-purple-200/80 text-purple-700 text-xs font-extrabold uppercase tracking-wider mb-3">
-              <Sparkles size={14} className="text-purple-600" /> Influencer Operations Hub
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-purple-50 border border-purple-200/80 text-purple-700 text-[11px] font-extrabold uppercase tracking-wider mb-2">
+              <Sparkles size={12} className="text-purple-600" /> Influencer Operations Hub
             </div>
-            <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-slate-900">
-              Influencer Directory
+            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
+              {activeTab === 'directory' ? 'Influencer Directory' : 'Influencer Application and Allocation'}
             </h1>
-            <p className="text-slate-500 text-sm mt-1.5 max-w-2xl font-medium">
-              Access and manage your database of influencers from past Barter &amp; Paid collaborations.
+            <p className="text-slate-500 text-xs sm:text-sm mt-0.5 max-w-xl font-medium">
+              {activeTab === 'directory'
+                ? 'Access and manage your verified creator database from past Barter & Paid collaborations.'
+                : 'Review inbound creators from the WhatsApp onboarding form, allot matching brands, and trigger alerts.'}
             </p>
           </div>
 
-          {/* Quick Metrics Bar */}
-          <div className="grid grid-cols-3 gap-3 shrink-0 min-w-[300px]">
-            <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-3.5 text-center shadow-2xs">
-              <div className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Database Creators</div>
-              <div className="text-2xl font-black text-purple-700 mt-0.5">{totalItems}</div>
-            </div>
-            <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-3.5 text-center shadow-2xs">
-              <div className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Categories</div>
-              <div className="text-2xl font-black text-slate-900 mt-0.5">{metrics.categoriesCount || CATEGORIES.filter(c => c.id !== 'All').length}</div>
-            </div>
-            <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-3.5 text-center shadow-2xs">
-              <div className="text-[11px] text-slate-500 font-bold uppercase tracking-wider">Avg Engagement</div>
-              <div className="text-2xl font-black text-emerald-600 mt-0.5">{metrics.avgEngagement || 4.8}%</div>
-            </div>
+          {/* Unified Mode Switcher Tabs */}
+          <div className="inline-flex items-center p-1 bg-slate-100/90 rounded-xl border border-slate-200/80 shrink-0 self-start md:self-center shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setActiveTab('directory')}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'directory'
+                  ? 'bg-white text-purple-700 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Users size={14} className={activeTab === 'directory' ? 'text-purple-600' : 'text-slate-400'} />
+              <span>Influencer Directory</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab('applications');
+                fetchAppStats();
+              }}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'applications'
+                  ? 'bg-white text-purple-700 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <UserPlus size={14} className={activeTab === 'applications' ? 'text-purple-600' : 'text-slate-400'} />
+              <span>Application and Allocation</span>
+            </button>
           </div>
         </div>
       </div>
 
+      {/* ── Content Switcher based on Active Tab ────────────────────────── */}
+      {activeTab === 'applications' ? (
+        <InfluencerApplicationsView isEmbedded={true} />
+      ) : (
+        <>
+
       {/* Directory Content Area */}
-      <div className="space-y-5">
+      <div className="space-y-4">
+        {/* Sleek Directory Metrics Bar */}
+        <div className="bg-white border border-slate-200/80 rounded-2xl shadow-2xs overflow-hidden">
+          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100">
+            <div className="p-3.5 sm:px-5 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Database Creators</span>
+                <span className="text-xl font-black text-purple-700 mt-0.5 block">{totalItems}</span>
+                <span className="text-[11px] text-slate-400 block mt-0.5">Verified roster profiles</span>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+                <Users size={17} />
+              </div>
+            </div>
+
+            <div className="p-3.5 sm:px-5 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Content Categories</span>
+                <span className="text-xl font-black text-slate-800 mt-0.5 block">{metrics.categoriesCount || CATEGORIES.filter(c => c.id !== 'All').length}</span>
+                <span className="text-[11px] text-slate-400 block mt-0.5">Fashion, Tech, Beauty &amp; more</span>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-600 flex items-center justify-center shrink-0">
+                <Layers size={17} />
+              </div>
+            </div>
+
+            <div className="p-3.5 sm:px-5 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider block">Avg Engagement Rate</span>
+                <span className="text-xl font-black text-emerald-600 mt-0.5 block">{metrics.avgEngagement || 4.8}%</span>
+                <span className="text-[11px] text-slate-400 block mt-0.5">Across recorded collaborations</span>
+              </div>
+              <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+                <TrendingUp size={17} />
+              </div>
+            </div>
+          </div>
+        </div>
         {/* Directory Toolbar / Filters */}
         <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
           {/* Search Input */}
@@ -1096,6 +1188,8 @@ export const InfluencerDirectoryView: React.FC<InfluencerDirectoryViewProps> = (
         warningMessage="These creator profiles will be soft-deleted and removed from the active influencer directory."
         loading={isBulkDeleting}
       />
+        </>
+      )}
     </div>
   );
 };

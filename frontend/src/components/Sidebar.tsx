@@ -229,13 +229,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ user, activeView, setActiveVie
               window.scrollTo(0, 0);
             }}
             className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl font-bold text-sm transition-all duration-200 ${
-              activeView === 'influencers-directory'
+              activeView === 'influencers-directory' || activeView === 'influencer-applications'
                 ? 'bg-gradient-to-r from-purple-600 via-indigo-600 to-pink-500 text-white shadow-md shadow-purple-500/25'
                 : 'text-slate-700 hover:text-purple-700 hover:bg-purple-50/60 border border-transparent'
             }`}
           >
             <div className="flex items-center space-x-2.5 min-w-0">
-              <Sparkles size={18} className={`shrink-0 ${activeView === 'influencers-directory' ? 'text-white' : 'text-purple-500'}`} />
+              <Sparkles size={18} className={`shrink-0 ${activeView === 'influencers-directory' || activeView === 'influencer-applications' ? 'text-white' : 'text-purple-500'}`} />
               <span className="whitespace-nowrap truncate">Influencers</span>
             </div>
           </button>

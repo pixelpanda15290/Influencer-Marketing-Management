@@ -11,7 +11,7 @@
   }
 
   body {
-    font-family: Arial, 'Helvetica Neue', Helvetica, sans-serif;
+    font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background-color: #f8fafc;
     background-image:
       radial-gradient(at 0% 0%, rgba(147, 51, 234, 0.06) 0px, transparent 50%),
@@ -27,18 +27,19 @@
   h4,
   h5,
   h6 {
-    font-weight: 800;
-    letter-spacing: -0.025em;
+    font-family: 'Outfit', 'Plus Jakarta Sans', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.02em;
     color: #0f172a;
   }
 
   label {
-    font-weight: 800;
-    letter-spacing: 0.04em;
+    font-weight: 600;
+    letter-spacing: 0.01em;
   }
 
   button {
-    font-weight: 700;
+    font-weight: 600;
     letter-spacing: 0.01em;
   }
 }

@@ -17,7 +17,8 @@ router.get('/', authenticateToken, checkPermission('brand.view'), async (req: Au
     // Filter brands to ONLY those assigned if the user is an employee or member
     const userRole = (req.user?.role || '').toLowerCase();
     const isScopedRole = userRole === 'employee' || userRole === 'member' || userRole === 'posting & content executive' || userRole === 'barter collab executive' || userRole === 'paid collab executive';
-    if (isScopedRole) {
+    const allowAll = req.query.all === 'true' || req.query.scope === 'all' || req.query.forAllotment === 'true';
+    if (isScopedRole && !allowAll) {
       const emp = await getEmployeeForAuthUser(req.user);
       if (emp) {
         const assignFilter: any = { employeeId: emp._id, status: 'Active', isDeleted: { $ne: true } };
@@ -92,6 +93,8 @@ router.get('/', authenticateToken, checkPermission('brand.view'), async (req: Au
     let query = Brand.find(filter).sort({ createdAt: -1 });
     if (pageNum !== undefined) {
       query = query.skip((pageNum - 1) * limitNum).limit(limitNum);
+    } else if (req.query.limit) {
+      query = query.limit(limitNum);
     }
     const brands = await query;
 

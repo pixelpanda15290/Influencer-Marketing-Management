@@ -27,6 +27,7 @@ import { URLSubmissionModal } from './components/URLSubmissionModal';
 import { PendingApprovalModal } from './components/PendingApprovalModal';
 
 import { PublicCalendarShareView } from './views/PublicCalendarShareView';
+import { PublicInfluencerFormView } from './views/PublicInfluencerFormView';
 
 export const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -50,7 +51,16 @@ export const App: React.FC = () => {
     return null;
   };
 
+  // Check if current hash is a public influencer onboarding form route
+  const isPublicApplyRoute = () => {
+    const hash = (window.location.hash || '').toLowerCase();
+    return hash.startsWith('#/apply') || hash.startsWith('#apply') || 
+           hash.startsWith('#/collab') || hash.startsWith('#collab') ||
+           hash.startsWith('#/join') || hash.startsWith('#join');
+  };
+
   const [shareToken, setShareToken] = useState<string | null>(getShareTokenFromHash);
+  const [isPublicApply, setIsPublicApply] = useState<boolean>(isPublicApplyRoute);
 
   // Helper to read initial active view from browser URL hash
   const getViewFromHash = () => {
@@ -81,6 +91,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => {
       setShareToken(getShareTokenFromHash());
+      setIsPublicApply(isPublicApplyRoute());
       setActiveView(getViewFromHash());
       window.scrollTo(0, 0);
     };
@@ -98,6 +109,11 @@ export const App: React.FC = () => {
   // If URL has a public share token, render public share view immediately (no login required)
   if (shareToken) {
     return <PublicCalendarShareView token={shareToken} />;
+  }
+
+  // If URL is public apply route, render public influencer application form immediately (no login required)
+  if (isPublicApply) {
+    return <PublicInfluencerFormView />;
   }
 
   const checkAuth = async () => {
@@ -303,6 +319,14 @@ export const App: React.FC = () => {
             <InfluencerDirectoryView
               userRole={user.role}
               currentUser={user}
+              initialTab="directory"
+            />
+          )}
+          {activeView === 'influencer-applications' && (
+            <InfluencerDirectoryView
+              userRole={user.role}
+              currentUser={user}
+              initialTab="applications"
             />
           )}
           {activeView === 'employee-brands' && (

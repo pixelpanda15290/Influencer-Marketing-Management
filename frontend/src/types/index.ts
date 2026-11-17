@@ -489,3 +489,47 @@ export interface DiscoveredInfluencer {
   dbRating?: number | null;
 }
 
+export interface InfluencerApplication {
+  _id: string;
+  fullName: string;
+  whatsappNumber: string;
+  email: string;
+  instagramHandle: string;
+  instagramUrl?: string;
+  followersCountBracket?: string;
+  category: string;
+  city: string;
+  state?: string;
+  collabTypePreference: 'Barter' | 'Paid' | 'Both';
+  costPerReel?: number;
+  costPerStory?: number;
+  languages?: string[];
+  shippingAddress?: {
+    addressLine?: string;
+    city?: string;
+    state?: string;
+    pincode?: string;
+    landmark?: string;
+    clothingSize?: string;
+    shoeSize?: string;
+  };
+  status: 'Pending' | 'Reviewing' | 'Brand Allotted' | 'Rejected' | 'Archived';
+  allottedBrandId?: string;
+  allottedBrandName?: string;
+  allottedCollabType?: 'Barter' | 'Paid' | 'Both';
+  allottedDeliverables?: string;
+  allottedCommercial?: number;
+  allottedManagerId?: string;
+  allottedManagerName?: string;
+  allottedAt?: string;
+  emailNotificationStatus?: 'Pending' | 'Sent' | 'Failed';
+  emailSentAt?: string;
+  whatsappMessageText?: string;
+  whatsappLastSentAt?: string;
+  managerNotes?: string;
+  source?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+

@@ -728,6 +728,115 @@ export const InfluencerDirectorySchema = new Schema<IInfluencerDirectory>({
 InfluencerDirectorySchema.index({ category: 1, followersCount: -1 });
 InfluencerDirectorySchema.index({ name: 'text', instagramHandle: 'text', bio: 'text' });
 
+// 16. Influencer Application Schema (Public WhatsApp Form Submissions)
+export interface IInfluencerApplication extends Document {
+  fullName: string;
+  whatsappNumber: string;
+  email: string;
+  instagramHandle: string;
+  instagramUrl?: string;
+  followersCountBracket?: string;
+  category: string;
+  city: string;
+  state?: string;
+  collabTypePreference: 'Barter' | 'Paid' | 'Both';
+  costPerReel?: number;
+  costPerStory?: number;
+  languages?: string[];
+  
+  // Shipping details for PR/Barter deliveries
+  shippingAddress?: {
+    addressLine: string;
+    city: string;
+    state: string;
+    pincode: string;
+    landmark?: string;
+    clothingSize?: string;
+    shoeSize?: string;
+  };
+
+  // Status & Brand Allotment
+  status: 'Pending' | 'Reviewing' | 'Brand Allotted' | 'Rejected' | 'Archived';
+  allottedBrandId?: mongoose.Types.ObjectId;
+  allottedBrandName?: string;
+  allottedCollabType?: 'Barter' | 'Paid' | 'Both';
+  allottedDeliverables?: string;
+  allottedCommercial?: number;
+  allottedManagerId?: mongoose.Types.ObjectId;
+  allottedManagerName?: string;
+  allottedAt?: Date;
+
+  // Notification logs
+  emailNotificationStatus?: 'Pending' | 'Sent' | 'Failed';
+  emailSentAt?: Date;
+  whatsappMessageText?: string;
+  whatsappLastSentAt?: Date;
+
+  managerNotes?: string;
+  source?: string;
+  isDeleted?: boolean;
+  deletedAt?: Date;
+  deletedBy?: mongoose.Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export const InfluencerApplicationSchema = new Schema<IInfluencerApplication>({
+  fullName: { type: String, required: true, trim: true },
+  whatsappNumber: { type: String, required: true, trim: true },
+  email: { type: String, required: true, trim: true, lowercase: true },
+  instagramHandle: { type: String, required: true, trim: true },
+  instagramUrl: { type: String, trim: true },
+  followersCountBracket: { type: String, default: '10k - 50k' },
+  category: { type: String, required: true, default: 'Fashion' },
+  city: { type: String, required: true, trim: true },
+  state: { type: String, trim: true },
+  collabTypePreference: { type: String, enum: ['Barter', 'Paid', 'Both'], default: 'Both' },
+  costPerReel: { type: Number, default: 0 },
+  costPerStory: { type: Number, default: 0 },
+  languages: [{ type: String }],
+
+  shippingAddress: {
+    addressLine: { type: String, default: '' },
+    city: { type: String, default: '' },
+    state: { type: String, default: '' },
+    pincode: { type: String, default: '' },
+    landmark: { type: String, default: '' },
+    clothingSize: { type: String, default: '' },
+    shoeSize: { type: String, default: '' }
+  },
+
+  status: { 
+    type: String, 
+    enum: ['Pending', 'Reviewing', 'Brand Allotted', 'Rejected', 'Archived'], 
+    default: 'Pending' 
+  },
+  allottedBrandId: { type: Schema.Types.ObjectId, ref: 'Brand' },
+  allottedBrandName: { type: String, default: '' },
+  allottedCollabType: { type: String, enum: ['Barter', 'Paid', 'Both'] },
+  allottedDeliverables: { type: String, default: '' },
+  allottedCommercial: { type: Number, default: 0 },
+  allottedManagerId: { type: Schema.Types.ObjectId, ref: 'User' },
+  allottedManagerName: { type: String, default: '' },
+  allottedAt: { type: Date },
+
+  emailNotificationStatus: { type: String, enum: ['Pending', 'Sent', 'Failed'], default: 'Pending' },
+  emailSentAt: { type: Date },
+  whatsappMessageText: { type: String, default: '' },
+  whatsappLastSentAt: { type: Date },
+
+  managerNotes: { type: String, default: '' },
+  source: { type: String, default: 'WhatsApp Campaign Link' },
+  isDeleted: { type: Boolean, default: false },
+  deletedAt: { type: Date },
+  deletedBy: { type: Schema.Types.ObjectId, ref: 'User' }
+}, { timestamps: true });
+
+InfluencerApplicationSchema.index({ status: 1, createdAt: -1 });
+InfluencerApplicationSchema.index({ whatsappNumber: 1 });
+InfluencerApplicationSchema.index({ instagramHandle: 1 });
+InfluencerApplicationSchema.index({ email: 1 });
+
 export const Permission = mongoose.model<IPermission>('Permission', PermissionSchema);
 export const Role = mongoose.model<IRole>('Role', RoleSchema);
 export const User = mongoose.model<IUser>('User', UserSchema);
@@ -745,6 +854,8 @@ export const PaymentLog = mongoose.model<IPaymentLog>('PaymentLog', PaymentLogSc
 export const ContentCalendar = mongoose.model<IContentCalendar>('ContentCalendar', ContentCalendarSchema);
 export const GoogleSheetConfig = mongoose.model<IGoogleSheetConfig>('GoogleSheetConfig', GoogleSheetConfigSchema);
 export const InfluencerDirectory = mongoose.model<IInfluencerDirectory>('InfluencerDirectory', InfluencerDirectorySchema);
+export const InfluencerApplication = mongoose.model<IInfluencerApplication>('InfluencerApplication', InfluencerApplicationSchema);
+
 
 
 
