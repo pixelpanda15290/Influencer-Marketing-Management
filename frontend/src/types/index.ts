@@ -513,7 +513,8 @@ export interface InfluencerApplication {
     clothingSize?: string;
     shoeSize?: string;
   };
-  status: 'Pending' | 'Reviewing' | 'Brand Allotted' | 'Rejected' | 'Archived';
+  status: 'Pending' | 'Reviewing' | 'Brand Allotted' | 'Opportunity Accepted' | 'Opportunity Declined' | 'Rejected' | 'Archived';
+  opportunityRespondedAt?: string;
   allottedBrandId?: string;
   allottedBrandName?: string;
   allottedCollabType?: 'Barter' | 'Paid' | 'Both';

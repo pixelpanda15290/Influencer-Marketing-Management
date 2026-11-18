@@ -756,7 +756,8 @@ export interface IInfluencerApplication extends Document {
   };
 
   // Status & Brand Allotment
-  status: 'Pending' | 'Reviewing' | 'Brand Allotted' | 'Rejected' | 'Archived';
+  status: 'Pending' | 'Reviewing' | 'Brand Allotted' | 'Opportunity Accepted' | 'Opportunity Declined' | 'Rejected' | 'Archived';
+  opportunityRespondedAt?: Date;
   allottedBrandId?: mongoose.Types.ObjectId;
   allottedBrandName?: string;
   allottedCollabType?: 'Barter' | 'Paid' | 'Both';
@@ -808,9 +809,10 @@ export const InfluencerApplicationSchema = new Schema<IInfluencerApplication>({
 
   status: { 
     type: String, 
-    enum: ['Pending', 'Reviewing', 'Brand Allotted', 'Rejected', 'Archived'], 
+    enum: ['Pending', 'Reviewing', 'Brand Allotted', 'Opportunity Accepted', 'Opportunity Declined', 'Rejected', 'Archived'], 
     default: 'Pending' 
   },
+  opportunityRespondedAt: { type: Date },
   allottedBrandId: { type: Schema.Types.ObjectId, ref: 'Brand' },
   allottedBrandName: { type: String, default: '' },
   allottedCollabType: { type: String, enum: ['Barter', 'Paid', 'Both'] },

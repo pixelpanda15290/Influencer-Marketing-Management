@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { 
   Sparkles, Instagram, Send, CheckCircle2, Phone, Mail, User, 
-  MapPin, Package, IndianRupee, ArrowRight, ShieldCheck, HeartHandshake,
+  MapPin, Package, ArrowRight, ShieldCheck, HeartHandshake,
   AlertCircle, Loader2, Info
 } from 'lucide-react';
 import { api } from '../services/api';
@@ -42,8 +42,6 @@ export const PublicInfluencerFormView: React.FC = () => {
     city: '',
     state: '',
     collabTypePreference: 'Both' as 'Barter' | 'Paid' | 'Both',
-    costPerReel: '',
-    costPerStory: '',
     languages: 'Hindi, English',
     // Shipping Address
     addressLine: '',
@@ -112,8 +110,8 @@ export const PublicInfluencerFormView: React.FC = () => {
         city: formData.city.trim(),
         state: formData.state.trim(),
         collabTypePreference: formData.collabTypePreference,
-        costPerReel: formData.costPerReel ? Number(formData.costPerReel) : 0,
-        costPerStory: formData.costPerStory ? Number(formData.costPerStory) : 0,
+        costPerReel: 0,
+        costPerStory: 0,
         languages: formData.languages.split(',').map(s => s.trim()).filter(Boolean),
         shippingAddress: {
           addressLine: formData.addressLine.trim(),
@@ -195,8 +193,6 @@ export const PublicInfluencerFormView: React.FC = () => {
                   city: '',
                   state: '',
                   collabTypePreference: 'Both',
-                  costPerReel: '',
-                  costPerStory: '',
                   languages: 'Hindi, English',
                   addressLine: '',
                   pincode: '',
@@ -453,91 +449,45 @@ export const PublicInfluencerFormView: React.FC = () => {
               </div>
             </div>
 
-            {/* Section 3: Collaboration Preferences & Rates */}
+            {/* Section 3: Collaboration Preferences */}
             <div>
               <div className="flex items-center gap-3 pb-3 mb-6 border-b border-slate-100">
                 <div className="w-7 h-7 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs shadow-2xs">
                   3
                 </div>
                 <h3 className="font-bold text-base sm:text-lg text-slate-900 tracking-tight">
-                  Collaboration Preferences &amp; Commercial Rates
+                  Collaboration Preference
                 </h3>
               </div>
 
-              <div className="space-y-5">
-                <div>
-                  <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2.5">
-                    What Type of Brand Deals Are You Interested In?
-                  </label>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {[
-                      { id: 'Both', label: 'Both Barter & Paid' },
-                      { id: 'Barter', label: 'Barter Only' },
-                      { id: 'Paid', label: 'Paid Only' }
-                    ].map(type => {
-                      const isActive = formData.collabTypePreference === type.id;
-                      return (
-                        <button
-                          type="button"
-                          key={type.id}
-                          onClick={() => setFormData(prev => ({ ...prev, collabTypePreference: type.id as any }))}
-                          className={`py-3.5 px-4 rounded-xl border text-center font-semibold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
-                            isActive
-                              ? 'bg-purple-50 border-purple-600 text-purple-900 shadow-xs ring-1 ring-purple-600 font-bold'
-                              : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
-                          }`}
-                        >
-                          {isActive && <CheckCircle2 size={16} className="text-purple-600 shrink-0" />}
-                          <span>{type.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+              <div>
+                <label className="block text-xs sm:text-sm font-semibold text-slate-700 mb-2.5">
+                  What Type of Brand Deals Are You Interested In?
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {[
+                    { id: 'Barter', label: 'Barter' },
+                    { id: 'Paid', label: 'Paid' },
+                    { id: 'Both', label: 'Both (Barter & Paid)' }
+                  ].map(type => {
+                    const isActive = formData.collabTypePreference === type.id;
+                    return (
+                      <button
+                        type="button"
+                        key={type.id}
+                        onClick={() => setFormData(prev => ({ ...prev, collabTypePreference: type.id as any }))}
+                        className={`py-3.5 px-4 rounded-xl border text-center font-semibold text-xs sm:text-sm transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          isActive
+                            ? 'bg-purple-50 border-purple-600 text-purple-900 shadow-xs ring-1 ring-purple-600 font-bold'
+                            : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
+                        }`}
+                      >
+                        {isActive && <CheckCircle2 size={16} className="text-purple-600 shrink-0" />}
+                        <span>{type.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
-
-                {formData.collabTypePreference !== 'Barter' && (
-                  <div className="p-4 sm:p-5 bg-gradient-to-r from-emerald-50/60 to-teal-50/40 border border-emerald-200/80 rounded-2xl">
-                    <div className="text-xs font-bold text-emerald-900 tracking-wide mb-3 flex items-center gap-2">
-                      <IndianRupee size={15} className="text-emerald-700" />
-                      Expected Commercial Payouts (INR)
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                          Expected Cost per Dedicated Reel (₹ INR)
-                        </label>
-                        <div className="relative">
-                          <IndianRupee className="absolute left-3.5 top-3 text-emerald-600" size={17} />
-                          <input
-                            type="number"
-                            name="costPerReel"
-                            value={formData.costPerReel}
-                            onChange={handleChange}
-                            placeholder="e.g. 5000"
-                            className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/15 transition"
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                          Expected Cost per Story (₹ INR)
-                        </label>
-                        <div className="relative">
-                          <IndianRupee className="absolute left-3.5 top-3 text-emerald-600" size={17} />
-                          <input
-                            type="number"
-                            name="costPerStory"
-                            value={formData.costPerStory}
-                            onChange={handleChange}
-                            placeholder="e.g. 1500"
-                            className="w-full pl-10 pr-3.5 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/15 transition"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 

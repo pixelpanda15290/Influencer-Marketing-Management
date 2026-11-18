@@ -184,7 +184,9 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
             _id: null,
             total: { $sum: 1 },
             pending: { $sum: { $cond: [{ $eq: ['$status', 'Pending'] }, 1, 0] } },
-            allotted: { $sum: { $cond: [{ $eq: ['$status', 'Brand Allotted'] }, 1, 0] } },
+            allotted: { $sum: { $cond: [{ $in: ['$status', ['Brand Allotted', 'Opportunity Accepted', 'Opportunity Declined']] }, 1, 0] } },
+            accepted: { $sum: { $cond: [{ $eq: ['$status', 'Opportunity Accepted'] }, 1, 0] } },
+            declined: { $sum: { $cond: [{ $eq: ['$status', 'Opportunity Declined'] }, 1, 0] } },
             rejected: { $sum: { $cond: [{ $eq: ['$status', 'Rejected'] }, 1, 0] } },
             barterOnly: { $sum: { $cond: [{ $eq: ['$collabTypePreference', 'Barter'] }, 1, 0] } },
             paidOnly: { $sum: { $cond: [{ $eq: ['$collabTypePreference', 'Paid'] }, 1, 0] } },
@@ -198,6 +200,8 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       total: 0,
       pending: 0,
       allotted: 0,
+      accepted: 0,
+      declined: 0,
       rejected: 0,
       barterOnly: 0,
       paidOnly: 0,
@@ -215,6 +219,326 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error('Error fetching influencer applications:', error);
     return res.status(500).json({ success: false, message: error.message || 'Server error' });
+  }
+});
+
+// Helper to render branded, mobile-responsive confirmation webpage for email Accept/Reject clicks
+const renderOpportunityResponseHtml = (params: {
+  success: boolean;
+  isAccept?: boolean;
+  title: string;
+  message: string;
+  brandName?: string;
+  creatorName?: string;
+  deliverables?: string;
+  collabType?: string;
+  managerName?: string;
+  whatsappNumber?: string;
+}) => {
+  const {
+    success,
+    isAccept,
+    title,
+    message,
+    brandName,
+    creatorName,
+    deliverables,
+    collabType,
+    managerName
+  } = params;
+
+  const headerGradient = isAccept
+    ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)'
+    : (success ? 'linear-gradient(135deg, #475569 0%, #64748b 100%)' : 'linear-gradient(135deg, #e11d48 0%, #f43f5e 100%)');
+
+  const iconSymbol = isAccept ? '&#10003;' : (success ? '&#10005;' : '!');
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${title} | Ad2ship Creator Network</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 16px;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+    .card {
+      background: #ffffff;
+      max-width: 520px;
+      width: 100%;
+      border-radius: 16px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.06);
+      overflow: hidden;
+    }
+    .header {
+      background: ${headerGradient};
+      padding: 32px 24px;
+      text-align: center;
+      color: #ffffff;
+    }
+    .icon-circle {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      border: 2px solid #ffffff;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+      font-weight: 700;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+    }
+    .header h1 {
+      font-size: 22px;
+      font-weight: 600;
+      letter-spacing: -0.2px;
+      margin-bottom: 5px;
+    }
+    .header p {
+      font-size: 13px;
+      opacity: 0.92;
+      font-weight: 400;
+    }
+    .body {
+      padding: 28px 24px;
+    }
+    .message {
+      font-size: 14.5px;
+      line-height: 1.6;
+      color: #475569;
+      text-align: center;
+      margin-bottom: 24px;
+      font-weight: 400;
+    }
+    .message strong {
+      font-weight: 600;
+      color: #1e293b;
+    }
+    .info-box {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+    }
+    .info-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 13px;
+    }
+    .info-row:last-child {
+      border-bottom: none;
+    }
+    .info-label {
+      color: #64748b;
+      font-weight: 400;
+    }
+    .info-val {
+      color: #0f172a;
+      font-weight: 500;
+      text-align: right;
+    }
+    .next-box {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      border-radius: 10px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      font-size: 13px;
+      color: #166534;
+      line-height: 1.5;
+      font-weight: 400;
+    }
+    .next-box strong {
+      font-weight: 600;
+    }
+    .btn-wrap {
+      text-align: center;
+      margin-top: 10px;
+    }
+    .footer {
+      border-top: 1px solid #f1f5f9;
+      padding: 16px 24px;
+      text-align: center;
+      font-size: 11px;
+      color: #94a3b8;
+      font-weight: 400;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <div class="icon-circle">${iconSymbol}</div>
+      <h1>${title}</h1>
+      <p>Ad2ship Creator Network &bull; Official Campaign Response</p>
+    </div>
+    <div class="body">
+      <div class="message">${message}</div>
+
+      ${brandName ? `
+      <div class="info-box">
+        <div class="info-row">
+          <span class="info-label">Allotted Brand</span>
+          <span class="info-val" style="color: #4338ca; font-weight: 600;">${brandName}</span>
+        </div>
+        ${collabType ? `
+        <div class="info-row">
+          <span class="info-label">Collab Mode</span>
+          <span class="info-val">${collabType}</span>
+        </div>` : ''}
+        ${deliverables ? `
+        <div class="info-row">
+          <span class="info-label">Deliverables</span>
+          <span class="info-val">${deliverables}</span>
+        </div>` : ''}
+        ${managerName ? `
+        <div class="info-row">
+          <span class="info-label">Assigned Manager</span>
+          <span class="info-val">${managerName}</span>
+        </div>` : ''}
+      </div>` : ''}
+
+      ${isAccept ? `
+      <div class="next-box">
+        <strong>✨ What happens next:</strong><br>
+        Our campaign management team has updated our live roster. Your assigned manager will connect with you to share the creative brief and coordinate package dispatch.
+      </div>
+
+      <div style="background-color: #faf5ff; border: 1px solid #e9d5ff; border-radius: 10px; padding: 16px; text-align: center; margin-bottom: 20px;">
+        <div style="font-family: 'Roboto', Arial, sans-serif; font-size: 13px; font-weight: 600; color: #6b21a8; margin-bottom: 4px;">
+          ✨ Join Our Influencer Community
+        </div>
+        <div style="font-family: 'Roboto', Arial, sans-serif; font-size: 12px; color: #581c87; line-height: 1.5; margin-bottom: 12px; font-weight: 400;">
+          Connect with fellow creators & receive early alerts for brand barter PR parcels and campaign briefs.
+        </div>
+        <a href="https://chat.whatsapp.com/LlDdZH5vdXi2Pbb1wCAymU?s=cl&p=a&iam=2" target="_blank" style="display: inline-block; background-color: #7c3aed; color: #ffffff; text-decoration: none; font-family: 'Roboto', Arial, sans-serif; font-size: 12px; font-weight: 600; padding: 8px 20px; border-radius: 6px; letter-spacing: 0.2px;">
+          Join Influencer Community on WhatsApp &rarr;
+        </a>
+      </div>` : ''}
+
+      <div class="btn-wrap">
+        <span style="font-size: 12px; color: #64748b;">You can safely close this browser window.</span>
+      </div>
+    </div>
+    <div class="footer">
+      &copy; ${new Date().getFullYear()} Ad2ship Influencer Operations Hub. All rights reserved.
+    </div>
+  </div>
+</body>
+</html>`;
+};
+
+// ============================================================================
+// 2b. PUBLIC ROUTE: Creator Responds to Brand Allotment (Accept / Reject Button)
+// GET /api/v1/influencer-applications/respond
+// ============================================================================
+router.get('/respond', async (req: Request, res: Response) => {
+  try {
+    const { id, action } = req.query;
+
+    if (!id || typeof id !== 'string' || !mongoose.Types.ObjectId.isValid(id)) {
+      return res.status(400).send(renderOpportunityResponseHtml({
+        success: false,
+        title: 'Invalid Link',
+        message: 'The collaboration link appears to be invalid or incomplete. Please check the button in your email.'
+      }));
+    }
+
+    const appItem = await InfluencerApplication.findById(id);
+    if (!appItem || appItem.isDeleted) {
+      return res.status(404).send(renderOpportunityResponseHtml({
+        success: false,
+        title: 'Invitation Not Found',
+        message: 'This campaign allotment record could not be found or has been archived.'
+      }));
+    }
+
+    const act = String(action || '').toLowerCase().trim();
+    const isAccept = act === 'accept';
+    const isReject = act === 'reject' || act === 'decline';
+
+    if (!isAccept && !isReject) {
+      return res.status(400).send(renderOpportunityResponseHtml({
+        success: false,
+        title: 'Unrecognized Action',
+        message: 'Please click the Accept or Decline button directly in your email.',
+        brandName: appItem.allottedBrandName,
+        creatorName: appItem.fullName
+      }));
+    }
+
+    const newStatus = isAccept ? 'Opportunity Accepted' : 'Opportunity Declined';
+    appItem.status = newStatus;
+    appItem.opportunityRespondedAt = new Date();
+    await appItem.save();
+
+    console.log(`[Influencer Response] ${appItem.fullName} responded: ${newStatus} for brand '${appItem.allottedBrandName}'`);
+
+    // Sync status with active Influencer tracking record if present
+    if (isAccept) {
+      try {
+        await Influencer.updateMany(
+          {
+            $or: [
+              { influencerInstagramId: appItem.instagramHandle, brandName: appItem.allottedBrandName },
+              { phone: appItem.whatsappNumber, brandName: appItem.allottedBrandName }
+            ],
+            isDeleted: { $ne: true }
+          },
+          {
+            $set: {
+              status: 'In Progress',
+              deliverables: appItem.allottedDeliverables || undefined
+            }
+          }
+        );
+      } catch (syncErr) {
+        console.warn('Could not update active tracking record:', syncErr);
+      }
+    }
+
+    return res.status(200).send(renderOpportunityResponseHtml({
+      success: true,
+      isAccept,
+      title: isAccept ? 'Collaboration Confirmed! 🎉' : 'Opportunity Declined',
+      message: isAccept
+        ? `Thank you, <strong>${appItem.fullName}</strong>! Your campaign slot for <strong>${appItem.allottedBrandName || 'the brand'}</strong> is officially accepted and confirmed on our operations panel.`
+        : `Thank you for letting us know, <strong>${appItem.fullName}</strong>. We have updated our campaign roster and our team will not contact you regarding this campaign.`,
+      brandName: appItem.allottedBrandName,
+      creatorName: appItem.fullName,
+      deliverables: appItem.allottedDeliverables,
+      collabType: appItem.allottedCollabType,
+      managerName: appItem.allottedManagerName,
+      whatsappNumber: appItem.whatsappNumber
+    }));
+  } catch (error: any) {
+    console.error('Error processing creator opportunity response:', error);
+    return res.status(500).send(renderOpportunityResponseHtml({
+      success: false,
+      title: 'Server Error',
+      message: 'An unexpected server error occurred while updating your status. Please contact your campaign manager.'
+    }));
   }
 });
 
@@ -329,31 +653,40 @@ ${nextStepText}
     appItem.managerNotes = managerNotes ? managerNotes.trim() : '';
     appItem.whatsappMessageText = whatsappMessage;
     appItem.whatsappLastSentAt = new Date();
-
-    // Trigger Email Notification via Nodemailer
-    if (sendEmailNotification && appItem.email) {
-      try {
-        const emailSent = await sendBrandAllotmentEmail({
-          influencerEmail: appItem.email,
-          influencerName: appItem.fullName,
-          brandName: brandName.trim(),
-          collabType,
-          deliverables: finalDeliverables,
-          commercialAmount: cleanComm,
-          managerName,
-          notes: managerNotes ? managerNotes.trim() : '',
-          influencerPhone: appItem.whatsappNumber
-        });
-
-        appItem.emailNotificationStatus = emailSent ? 'Sent' : 'Failed';
-        appItem.emailSentAt = new Date();
-      } catch (emailErr) {
-        console.error('Error sending brand allotment email:', emailErr);
-        appItem.emailNotificationStatus = 'Failed';
-      }
-    }
+    appItem.emailNotificationStatus = sendEmailNotification && appItem.email ? 'Pending' : undefined;
+    appItem.emailSentAt = sendEmailNotification && appItem.email ? new Date() : undefined;
 
     await appItem.save();
+
+    // Trigger Email Notification in background (non-blocking so API responds immediately)
+    if (sendEmailNotification && appItem.email) {
+      setImmediate(async () => {
+        try {
+          const emailSent = await sendBrandAllotmentEmail({
+            applicationId: appItem._id.toString(),
+            influencerEmail: appItem.email,
+            influencerName: appItem.fullName,
+            brandName: brandName.trim(),
+            collabType,
+            deliverables: finalDeliverables,
+            commercialAmount: cleanComm,
+            managerName,
+            notes: managerNotes ? managerNotes.trim() : '',
+            influencerPhone: appItem.whatsappNumber
+          });
+
+          await InfluencerApplication.findByIdAndUpdate(appItem._id, {
+            emailNotificationStatus: emailSent ? 'Sent' : 'Failed',
+            emailSentAt: new Date()
+          });
+        } catch (emailErr) {
+          console.error('[Background Email Dispatch] Error sending brand allotment email:', emailErr);
+          await InfluencerApplication.findByIdAndUpdate(appItem._id, {
+            emailNotificationStatus: 'Failed'
+          }).catch(() => {});
+        }
+      });
+    }
 
     // Optionally create or sync in Ad2ship Influencers table so it appears in daily tracking
     if (addToActiveTracking) {
@@ -423,7 +756,7 @@ ${nextStepText}
 router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
     const { status, managerNotes } = req.body;
-    const allowed = ['Pending', 'Reviewing', 'Brand Allotted', 'Rejected', 'Archived'];
+    const allowed = ['Pending', 'Reviewing', 'Brand Allotted', 'Opportunity Accepted', 'Opportunity Declined', 'Rejected', 'Archived'];
     if (!status || !allowed.includes(status)) {
       return res.status(400).json({ success: false, message: 'Invalid status' });
     }

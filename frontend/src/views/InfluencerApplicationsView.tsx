@@ -52,6 +52,8 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
     total: 0,
     pending: 0,
     allotted: 0,
+    accepted: 0,
+    declined: 0,
     rejected: 0,
     barterOnly: 0,
     paidOnly: 0,
@@ -98,6 +100,14 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
   const [newDeliverableInput, setNewDeliverableInput] = useState('');
   const deliverablesDropdownRef = useRef<HTMLDivElement>(null);
 
+  // Searchable Brand Dropdown State
+  const [showBrandDropdown, setShowBrandDropdown] = useState(false);
+  const [brandSearchQuery, setBrandSearchQuery] = useState('');
+  const [isCustomBrand, setIsCustomBrand] = useState(false);
+  const [customBrandName, setCustomBrandName] = useState('');
+  const brandDropdownRef = useRef<HTMLDivElement>(null);
+  const brandSearchInputRef = useRef<HTMLInputElement>(null);
+
   const handleAddNewDeliverable = () => {
     const trimmed = newDeliverableInput.trim();
     if (!trimmed) return;
@@ -129,10 +139,21 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
       if (deliverablesDropdownRef.current && !deliverablesDropdownRef.current.contains(e.target as Node)) {
         setShowDeliverablesDropdown(false);
       }
+      if (brandDropdownRef.current && !brandDropdownRef.current.contains(e.target as Node)) {
+        setShowBrandDropdown(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  useEffect(() => {
+    if (showBrandDropdown) {
+      setTimeout(() => {
+        brandSearchInputRef.current?.focus();
+      }, 50);
+    }
+  }, [showBrandDropdown]);
 
   // Fetch Brands for dropdown
   const fetchBrands = async () => {
@@ -233,6 +254,10 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
       sendEmailNotification: true,
       addToActiveTracking: true
     });
+    setIsCustomBrand(false);
+    setCustomBrandName('');
+    setShowBrandDropdown(false);
+    setBrandSearchQuery('');
     setShowDeliverablesDropdown(false);
     setShowAllotModal(true);
   };
@@ -242,7 +267,8 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
     e.preventDefault();
     if (!selectedApp) return;
 
-    if (!allotForm.brandName) {
+    const finalBrandName = isCustomBrand ? customBrandName.trim() : allotForm.brandName.trim();
+    if (!finalBrandName) {
       alert('Please select or specify a brand to allot.');
       return;
     }
@@ -250,8 +276,8 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
     setSubmittingAllotment(true);
     try {
       const res = await api.post(`/influencer-applications/${selectedApp._id}/allot-brand`, {
-        brandId: allotForm.brandId,
-        brandName: allotForm.brandName,
+        brandId: isCustomBrand ? '' : allotForm.brandId,
+        brandName: finalBrandName,
         collabType: allotForm.collabType,
         deliverables: allotForm.deliverables,
         commercialAmount: allotForm.commercialAmount,
@@ -264,7 +290,7 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
         setAllotmentSuccessData({
           whatsappShareUrl: res.whatsappShareUrl,
           whatsappMessage: res.whatsappMessage,
-          brandName: allotForm.brandName,
+          brandName: finalBrandName,
           influencerName: selectedApp.fullName
         });
         fetchApplications();
@@ -337,6 +363,16 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
     if (parts.length === 1) return parts[0].substring(0, 2).toUpperCase();
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
+
+  // Filter brands for searchable allot dropdown
+  const filteredBrands = brands.filter(b => {
+    if (!brandSearchQuery.trim()) return true;
+    const q = brandSearchQuery.trim().toLowerCase();
+    const nameMatch = (b.brandName || '').toLowerCase().includes(q);
+    const indMatch = (b.industry || '').toLowerCase().includes(q);
+    const idMatch = (b.brandId || '').toLowerCase().includes(q);
+    return nameMatch || indMatch || idMatch;
+  });
 
   return (
     <div className="space-y-4">
@@ -466,11 +502,18 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
             </div>
           </div>
 
-          {/* Brand Allotted */}
+          {/* Brand Allotted & Accepted */}
           <div className="p-3.5 sm:px-5 flex items-center justify-between">
             <div>
               <span className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-wider block">Brand Allotted</span>
-              <span className="text-xl font-black text-emerald-600 mt-0.5 block">{stats.allotted}</span>
+              <div className="flex items-center gap-2 mt-0.5">
+                <span className="text-xl font-black text-emerald-600">{stats.allotted}</span>
+                {Boolean(stats.accepted) && (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">
+                    {stats.accepted} Accepted 🎉
+                  </span>
+                )}
+              </div>
               <span className="text-[11px] text-slate-400 block mt-0.5">Dispatched to Creators</span>
             </div>
             <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
@@ -524,6 +567,8 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
               <option value="All">All Statuses</option>
               <option value="Pending">Pending Review</option>
               <option value="Brand Allotted">Brand Allotted</option>
+              <option value="Opportunity Accepted">Opportunity Accepted 🎉</option>
+              <option value="Opportunity Declined">Opportunity Declined</option>
               <option value="Reviewing">Reviewing</option>
               <option value="Rejected">Rejected</option>
             </select>
@@ -603,6 +648,8 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                 </tr>
               ) : (
                 applications.map(item => {
+                  const isAccepted = item.status === 'Opportunity Accepted';
+                  const isDeclined = item.status === 'Opportunity Declined';
                   const isAllotted = item.status === 'Brand Allotted';
                   const isPending = item.status === 'Pending';
                   const isRejected = item.status === 'Rejected';
@@ -687,10 +734,31 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
 
                       {/* Status & Allotted Brand */}
                       <td className="py-3.5 px-4">
-                        {isAllotted ? (
+                        {isAccepted ? (
                           <div className="space-y-1">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black uppercase">
-                              <CheckCircle2 size={11} className="text-emerald-600" /> Allotted
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black uppercase shadow-2xs">
+                              <CheckCircle2 size={11} className="text-emerald-700" /> Accepted by Creator 🎉
+                            </span>
+                            <div className="font-extrabold text-purple-900 text-xs flex items-center gap-1 mt-0.5">
+                              <Building2 size={12} className="text-purple-600" />
+                              <span>{item.allottedBrandName}</span>
+                            </div>
+                          </div>
+                        ) : isDeclined ? (
+                          <div className="space-y-1">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-black uppercase">
+                              <XCircle size={11} className="text-rose-600" /> Declined by Creator
+                            </span>
+                            {item.allottedBrandName && (
+                              <div className="text-[11px] text-slate-400 font-medium line-through">
+                                {item.allottedBrandName}
+                              </div>
+                            )}
+                          </div>
+                        ) : isAllotted ? (
+                          <div className="space-y-1">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-800 border border-purple-200 text-[10px] font-black uppercase">
+                              <CheckCircle2 size={11} className="text-purple-600" /> Brand Allotted
                             </span>
                             <div className="font-extrabold text-purple-900 text-xs flex items-center gap-1 mt-0.5">
                               <Building2 size={12} className="text-purple-600" />
@@ -790,7 +858,7 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                     {allotmentSuccessData.brandName} allotted to {allotmentSuccessData.influencerName}!
                   </h4>
                   <p className="text-xs text-emerald-800 mt-1 leading-relaxed">
-                    An official brand allotment confirmation email has been dispatched to <strong>{selectedApp.email}</strong>.
+                    An official brand allotment confirmation email is being dispatched to <strong>{selectedApp.email}</strong> in the background.
                   </p>
                 </div>
               </div>
@@ -880,59 +948,205 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                   <div className="text-[11px] font-extrabold uppercase tracking-wider text-purple-700">
                     Preference: <span className="text-purple-950 font-black">{selectedApp.collabTypePreference}</span>
                   </div>
-                  {selectedApp.costPerReel ? (
-                    <div className="text-xs font-black text-slate-900">
-                      Rate: ₹{selectedApp.costPerReel.toLocaleString()}<span className="text-[10px] font-semibold text-slate-500">/Reel</span>
-                    </div>
-                  ) : (
-                    <div className="text-[11px] font-bold text-emerald-600">Open to Barter PR</div>
-                  )}
                 </div>
               </div>
 
               {/* 2-Column Executive Row: Brand Selector & Collaboration Mode */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
-                {/* Brand Selector */}
-                <div>
+                {/* Searchable Brand Dropdown Selector */}
+                <div ref={brandDropdownRef} className="relative">
                   <label className="block text-xs font-black uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
                     <Building2 size={14} className="text-purple-600" />
                     Select Brand to Allot <span className="text-rose-500">*</span>
                   </label>
-                  <select
-                    value={allotForm.brandName}
-                    onChange={e => {
-                      const selectedBrand = brands.find(b => b.brandName === e.target.value);
-                      setAllotForm(prev => ({
-                        ...prev,
-                        brandName: e.target.value,
-                        brandId: (selectedBrand as any)?._id || selectedBrand?.brandId || ''
-                      }));
-                    }}
-                    required
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-bold text-slate-800 focus:outline-none focus:border-purple-500 focus:bg-white shadow-2xs transition"
-                  >
-                    {brands.length === 0 && (
-                      <option value="" disabled>-- No brands found in system --</option>
-                    )}
-                    {brands.map((b, idx) => (
-                      <option key={b.brandId || (b as any)._id || idx} value={b.brandName}>
-                        {b.brandName} {b.industry ? `(${b.industry})` : ''} {b.brandId ? `• ${b.brandId}` : ''}
-                      </option>
-                    ))}
-                    <option value="Other / Custom Brand">+ Other / Custom Brand</option>
-                  </select>
 
-                  {allotForm.brandName === 'Other / Custom Brand' && (
-                    <div className="mt-2 animate-in fade-in slide-in-from-top-1 duration-200">
+                  {/* Trigger Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowBrandDropdown(prev => !prev);
+                      setShowDeliverablesDropdown(false);
+                    }}
+                    className={`w-full px-3.5 py-2.5 bg-slate-50 border rounded-xl text-left text-xs sm:text-sm transition flex items-center justify-between cursor-pointer shadow-2xs ${
+                      showBrandDropdown
+                        ? 'border-purple-500 bg-white ring-2 ring-purple-500/15'
+                        : 'border-slate-200 hover:border-slate-300 hover:bg-slate-100/60'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0 mr-2">
+                      <Building2 size={15} className="text-purple-600 shrink-0" />
+                      {isCustomBrand ? (
+                        <div className="truncate font-bold text-purple-900">
+                          {customBrandName.trim() ? `Custom: ${customBrandName}` : '+ Other / Custom Brand'}
+                        </div>
+                      ) : allotForm.brandName ? (
+                        <div className="truncate font-bold text-slate-800 flex items-center gap-1.5">
+                          <span>{allotForm.brandName}</span>
+                          {(() => {
+                            const currentBrand = brands.find(b => b.brandName === allotForm.brandName);
+                            if (!currentBrand || !currentBrand.industry) return null;
+                            return (
+                              <span className="text-[11px] font-medium text-slate-500 hidden sm:inline">
+                                ({currentBrand.industry})
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 font-medium">Click to search &amp; select brand...</span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-1 shrink-0 text-slate-400">
+                      <ChevronDown
+                        size={16}
+                        className={`transition-transform duration-200 ${showBrandDropdown ? 'rotate-180 text-purple-600' : ''}`}
+                      />
+                    </div>
+                  </button>
+
+                  {/* Searchable Dropdown Popover */}
+                  {showBrandDropdown && (
+                    <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                      {/* Search Header */}
+                      <div className="p-2.5 border-b border-slate-100 bg-slate-50/90">
+                        <div className="relative flex items-center">
+                          <Search size={14} className="absolute left-3 text-slate-400 pointer-events-none" />
+                          <input
+                            ref={brandSearchInputRef}
+                            type="text"
+                            value={brandSearchQuery}
+                            onChange={e => setBrandSearchQuery(e.target.value)}
+                            placeholder="Type brand name or industry to search..."
+                            className="w-full pl-9 pr-8 py-2 bg-white border border-slate-200 rounded-xl text-xs sm:text-sm font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-500/15"
+                            onKeyDown={e => {
+                              if (e.key === 'Escape') {
+                                setShowBrandDropdown(false);
+                              } else if (e.key === 'Enter') {
+                                e.preventDefault();
+                                if (filteredBrands.length > 0) {
+                                  const first = filteredBrands[0];
+                                  setIsCustomBrand(false);
+                                  setAllotForm(prev => ({
+                                    ...prev,
+                                    brandName: first.brandName,
+                                    brandId: (first as any)?._id || first.brandId || ''
+                                  }));
+                                  setShowBrandDropdown(false);
+                                  setBrandSearchQuery('');
+                                }
+                              }
+                            }}
+                          />
+                          {brandSearchQuery && (
+                            <button
+                              type="button"
+                              onClick={() => setBrandSearchQuery('')}
+                              className="absolute right-2.5 p-1 text-slate-400 hover:text-slate-600 rounded-md hover:bg-slate-100 transition cursor-pointer text-xs font-bold"
+                              title="Clear search"
+                            >
+                              ✕
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Brand List Options */}
+                      <div className="max-h-60 overflow-y-auto p-1.5 space-y-1 scrollbar-thin">
+                        {filteredBrands.length === 0 ? (
+                          <div className="py-6 text-center text-xs text-slate-400 font-medium">
+                            No brands found matching "<span className="font-bold text-slate-700">{brandSearchQuery}</span>"
+                          </div>
+                        ) : (
+                          filteredBrands.map((b, idx) => {
+                            const isSelected = !isCustomBrand && allotForm.brandName === b.brandName;
+                            return (
+                              <button
+                                type="button"
+                                key={b.brandId || (b as any)._id || idx}
+                                onClick={() => {
+                                  setIsCustomBrand(false);
+                                  setAllotForm(prev => ({
+                                    ...prev,
+                                    brandName: b.brandName,
+                                    brandId: (b as any)?._id || b.brandId || ''
+                                  }));
+                                  setShowBrandDropdown(false);
+                                  setBrandSearchQuery('');
+                                }}
+                                className={`w-full px-3 py-2 rounded-xl text-left transition flex items-center justify-between cursor-pointer ${
+                                  isSelected
+                                    ? 'bg-purple-50 text-purple-900 font-bold border border-purple-200 shadow-2xs'
+                                    : 'hover:bg-slate-50 text-slate-700 border border-transparent'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 text-xs font-black ${
+                                    isSelected ? 'bg-purple-600 text-white' : 'bg-slate-100 text-slate-600'
+                                  }`}>
+                                    {b.brandName.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="text-xs sm:text-sm font-bold text-slate-900 truncate">
+                                      <span>{b.brandName}</span>
+                                    </div>
+                                    {b.industry && (
+                                      <div className="text-[11px] text-slate-500 truncate">
+                                        {b.industry}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                                {isSelected && (
+                                  <CheckCircle2 size={16} className="text-purple-600 shrink-0 ml-2" />
+                                )}
+                              </button>
+                            );
+                          })
+                        )}
+
+                        {/* Other / Custom Brand option */}
+                        <div className="pt-1 mt-1 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsCustomBrand(true);
+                              setShowBrandDropdown(false);
+                              setBrandSearchQuery('');
+                            }}
+                            className={`w-full px-3 py-2 rounded-xl text-left text-xs font-bold transition flex items-center justify-between cursor-pointer ${
+                              isCustomBrand
+                                ? 'bg-purple-50 text-purple-900 border border-purple-200'
+                                : 'hover:bg-purple-50/50 text-purple-700 border border-transparent'
+                            }`}
+                          >
+                            <span className="flex items-center gap-1.5">
+                              <Plus size={14} className="text-purple-600" />
+                              Other / Custom Brand
+                            </span>
+                            {isCustomBrand && (
+                              <CheckCircle2 size={16} className="text-purple-600 shrink-0" />
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Custom Brand Name Input Field */}
+                  {isCustomBrand && (
+                    <div className="mt-2.5 animate-in fade-in slide-in-from-top-1 duration-200">
                       <label className="block text-xs font-bold text-slate-700 mb-1">
-                        Custom Brand Name <span className="text-rose-500">*</span>
+                        Enter Custom Brand Name <span className="text-rose-500">*</span>
                       </label>
                       <input
                         type="text"
                         required
-                        placeholder="Enter brand name..."
-                        onChange={e => setAllotForm(prev => ({ ...prev, brandName: e.target.value }))}
-                        className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 font-semibold focus:bg-white focus:outline-none focus:border-purple-500"
+                        value={customBrandName}
+                        placeholder="e.g. Acme Studio..."
+                        onChange={e => setCustomBrandName(e.target.value)}
+                        className="w-full px-3.5 py-2 bg-white border border-purple-300 rounded-xl text-xs sm:text-sm text-slate-800 font-semibold focus:outline-none focus:border-purple-600 focus:ring-2 focus:ring-purple-500/15"
+                        autoFocus
                       />
                     </div>
                   )}
@@ -1037,8 +1251,8 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                       <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">₹</span>
                       <input
                         type="number"
-                        value={allotForm.commercialAmount}
-                        onChange={e => setAllotForm(prev => ({ ...prev, commercialAmount: Number(e.target.value) }))}
+                        value={allotForm.commercialAmount || ''}
+                        onChange={e => setAllotForm(prev => ({ ...prev, commercialAmount: e.target.value === '' ? 0 : Number(e.target.value) }))}
                         placeholder="0"
                         className="w-full pl-8 pr-3.5 py-2 bg-white border border-amber-300 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
                       />
@@ -1085,8 +1299,8 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                     <span className="absolute left-3.5 top-1/2 -translate-y-1/2 font-black text-slate-500 text-sm">₹</span>
                     <input
                       type="number"
-                      value={allotForm.commercialAmount}
-                      onChange={e => setAllotForm(prev => ({ ...prev, commercialAmount: Number(e.target.value) }))}
+                      value={allotForm.commercialAmount || ''}
+                      onChange={e => setAllotForm(prev => ({ ...prev, commercialAmount: e.target.value === '' ? 0 : Number(e.target.value) }))}
                       placeholder="0"
                       className="w-full pl-8 pr-4 py-2.5 bg-white border border-amber-300 rounded-xl text-sm font-black text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
                     />
@@ -1158,7 +1372,10 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                   {/* Clean Arrow Button (No label) */}
                   <button
                     type="button"
-                    onClick={() => setShowDeliverablesDropdown(prev => !prev)}
+                    onClick={() => {
+                      setShowDeliverablesDropdown(prev => !prev);
+                      setShowBrandDropdown(false);
+                    }}
                     className="absolute right-2 p-1.5 text-slate-400 hover:text-purple-600 hover:bg-purple-50 rounded-lg cursor-pointer transition flex items-center justify-center"
                     title="Select deliverables"
                   >
@@ -1338,9 +1555,17 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
               </div>
 
               <div className="flex flex-wrap sm:flex-col sm:items-end gap-1.5">
-                {selectedApp.status === 'Brand Allotted' ? (
-                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-black uppercase">
-                    <CheckCircle2 size={12} className="text-emerald-600" /> Brand Allotted
+                {selectedApp.status === 'Opportunity Accepted' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[11px] font-black uppercase">
+                    <CheckCircle2 size={12} className="text-emerald-700" /> Accepted by Creator 🎉
+                  </span>
+                ) : selectedApp.status === 'Opportunity Declined' ? (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-100 text-rose-800 border border-rose-200 text-[11px] font-black uppercase">
+                    <XCircle size={12} className="text-rose-600" /> Declined by Creator
+                  </span>
+                ) : selectedApp.status === 'Brand Allotted' ? (
+                  <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-purple-100 text-purple-800 text-[11px] font-black uppercase">
+                    <CheckCircle2 size={12} className="text-purple-600" /> Brand Allotted
                   </span>
                 ) : selectedApp.status === 'Pending' ? (
                   <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-[11px] font-black uppercase">
@@ -1525,12 +1750,19 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
               </div>
             </div>
 
-            {/* Section 5: Allotted Brand Information (if allotted) */}
-            {selectedApp.status === 'Brand Allotted' && (
-              <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl space-y-2.5">
-                <div className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-950 flex items-center gap-1.5">
-                  <CheckCircle2 size={13} className="text-emerald-600" />
-                  <span>Campaign Allotment Details</span>
+            {/* Section 5: Allotted Brand Information (if allotted / responded) */}
+            {(selectedApp.status === 'Brand Allotted' || selectedApp.status === 'Opportunity Accepted' || selectedApp.status === 'Opportunity Declined') && (
+              <div className={`p-4 rounded-2xl space-y-2.5 border ${selectedApp.status === 'Opportunity Accepted' ? 'bg-emerald-50/70 border-emerald-300' : (selectedApp.status === 'Opportunity Declined' ? 'bg-rose-50/70 border-rose-200' : 'bg-purple-50/60 border-purple-200')}`}>
+                <div className="text-[11px] font-extrabold uppercase tracking-wider flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 size={13} className={selectedApp.status === 'Opportunity Declined' ? 'text-rose-600' : 'text-emerald-600'} />
+                    <span className={selectedApp.status === 'Opportunity Declined' ? 'text-rose-950' : 'text-emerald-950'}>Campaign Allotment Details</span>
+                  </div>
+                  {selectedApp.opportunityRespondedAt && (
+                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-white border border-emerald-300 text-emerald-800 shadow-2xs">
+                      Responded: {new Date(selectedApp.opportunityRespondedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  )}
                 </div>
                 <div className="bg-white p-3 rounded-xl border border-emerald-100 space-y-2 text-xs">
                   <div className="grid grid-cols-2 gap-2">
