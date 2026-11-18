@@ -272,7 +272,11 @@ export const sendBrandAllotmentEmail = async (
   }
 
   // Build Accept and Reject Action URLs
-  const backendBaseUrl = (process.env.BACKEND_URL || process.env.API_URL || 'http://localhost:5000').replace(/\/$/, '');
+  const backendBaseUrl = (
+    process.env.BACKEND_URL || 
+    process.env.API_URL || 
+    (process.env.NODE_ENV === 'development' ? 'http://localhost:5000' : 'https://media.ad2ship.com')
+  ).replace(/\/$/, '');
   const acceptUrl = payload.acceptUrl || (applicationId 
     ? `${backendBaseUrl}/api/v1/influencer-applications/respond?id=${applicationId}&action=accept` 
     : '');

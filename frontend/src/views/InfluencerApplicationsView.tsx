@@ -283,7 +283,8 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
         commercialAmount: allotForm.commercialAmount,
         managerNotes: allotForm.managerNotes,
         sendEmailNotification: allotForm.sendEmailNotification,
-        addToActiveTracking: allotForm.addToActiveTracking
+        addToActiveTracking: allotForm.addToActiveTracking,
+        clientOrigin: window.location.origin
       });
 
       if (res.success) {

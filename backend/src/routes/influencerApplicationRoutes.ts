@@ -658,6 +658,37 @@ ${nextStepText}
 
     await appItem.save();
 
+    // Dynamically resolve public backend URL for Accept / Decline action buttons
+    let detectedBaseUrl = (process.env.BACKEND_URL || process.env.API_URL || '').trim();
+    if (!detectedBaseUrl || detectedBaseUrl.includes('localhost') || detectedBaseUrl.includes('127.0.0.1')) {
+      const clientOrigin = req.body?.clientOrigin || req.headers.origin;
+      if (clientOrigin && typeof clientOrigin === 'string' && !clientOrigin.includes('localhost')) {
+        detectedBaseUrl = clientOrigin.replace(/\/$/, '');
+      } else {
+        const forwardedHost = (req.headers['x-forwarded-host'] as string) || req.get('host');
+        const forwardedProto = (req.headers['x-forwarded-proto'] as string) || req.protocol || 'https';
+        if (forwardedHost && !forwardedHost.includes('localhost') && !forwardedHost.includes('127.0.0.1')) {
+          detectedBaseUrl = `${forwardedProto}://${forwardedHost}`.replace(/\/$/, '');
+        } else if (req.headers.referer) {
+          try {
+            const refUrl = new URL(req.headers.referer);
+            if (!refUrl.host.includes('localhost') && !refUrl.host.includes('127.0.0.1')) {
+              detectedBaseUrl = refUrl.origin.replace(/\/$/, '');
+            }
+          } catch (e) {}
+        }
+      }
+    }
+
+    if (!detectedBaseUrl || detectedBaseUrl.includes('localhost')) {
+      // Default fallback for live environments
+      detectedBaseUrl = 'https://media.ad2ship.com';
+    }
+
+    detectedBaseUrl = detectedBaseUrl.replace(/\/$/, '');
+    const dynamicAcceptUrl = `${detectedBaseUrl}/api/v1/influencer-applications/respond?id=${appItem._id}&action=accept`;
+    const dynamicRejectUrl = `${detectedBaseUrl}/api/v1/influencer-applications/respond?id=${appItem._id}&action=reject`;
+
     // Trigger Email Notification in background (non-blocking so API responds immediately)
     if (sendEmailNotification && appItem.email) {
       setImmediate(async () => {
@@ -672,7 +703,9 @@ ${nextStepText}
             commercialAmount: cleanComm,
             managerName,
             notes: managerNotes ? managerNotes.trim() : '',
-            influencerPhone: appItem.whatsappNumber
+            influencerPhone: appItem.whatsappNumber,
+            acceptUrl: dynamicAcceptUrl,
+            rejectUrl: dynamicRejectUrl
           });
 
           await InfluencerApplication.findByIdAndUpdate(appItem._id, {
