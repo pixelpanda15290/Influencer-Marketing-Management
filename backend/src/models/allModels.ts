@@ -344,6 +344,7 @@ export interface ISetting extends Document {
   key: string;
   value: Schema.Types.Mixed;
   category: string;
+  otherCategory?: string;
   description?: string;
 }
 
@@ -659,6 +660,7 @@ export interface IInfluencerDirectory extends Document {
   name: string;
   avatar?: string;
   category: string;
+  otherCategory?: string;
   nicheTags?: string[];
   followersCount: number;
   followingCount?: number;
@@ -692,6 +694,7 @@ export const InfluencerDirectorySchema = new Schema<IInfluencerDirectory>({
   name: { type: String, required: true },
   avatar: { type: String, default: '' },
   category: { type: String, required: true, default: 'Fashion' },
+  otherCategory: { type: String, default: '', trim: true },
   nicheTags: [{ type: String }],
   followersCount: { type: Number, default: 0 },
   followingCount: { type: Number, default: 0 },
@@ -737,6 +740,7 @@ export interface IInfluencerApplication extends Document {
   instagramUrl?: string;
   followersCountBracket?: string;
   category: string;
+  otherCategory?: string;
   city: string;
   state?: string;
   collabTypePreference: 'Barter' | 'Paid' | 'Both';
@@ -754,6 +758,9 @@ export interface IInfluencerApplication extends Document {
     clothingSize?: string;
     shoeSize?: string;
   };
+
+  // Niche-specific PR specifications & preferences
+  nicheDetails?: Record<string, any>;
 
   // Status & Brand Allotment
   status: 'Pending' | 'Reviewing' | 'Brand Allotted' | 'Opportunity Accepted' | 'Opportunity Declined' | 'Rejected' | 'Archived';
@@ -790,6 +797,7 @@ export const InfluencerApplicationSchema = new Schema<IInfluencerApplication>({
   instagramUrl: { type: String, trim: true },
   followersCountBracket: { type: String, default: '10k - 50k' },
   category: { type: String, required: true, default: 'Fashion' },
+  otherCategory: { type: String, default: '', trim: true },
   city: { type: String, required: true, trim: true },
   state: { type: String, trim: true },
   collabTypePreference: { type: String, enum: ['Barter', 'Paid', 'Both'], default: 'Both' },
@@ -806,6 +814,8 @@ export const InfluencerApplicationSchema = new Schema<IInfluencerApplication>({
     clothingSize: { type: String, default: '' },
     shoeSize: { type: String, default: '' }
   },
+
+  nicheDetails: { type: Schema.Types.Mixed, default: {} },
 
   status: { 
     type: String, 

@@ -272,6 +272,7 @@ export interface MemberTargetItem {
     influencerName: string;
     brandName: string;
     category: string;
+  otherCategory?: string;
     brandOnboardingAmt: number;
     influencerOnboardingAmt: number;
     ad2shipMargin: number;
@@ -434,6 +435,7 @@ export interface InfluencerDirectoryItem {
   name: string;
   avatar?: string;
   category: string;
+  otherCategory?: string;
   nicheTags?: string[];
   followersCount: number;
   followingCount?: number;
@@ -468,6 +470,7 @@ export interface DiscoveredInfluencer {
   name: string;
   avatar: string;
   category: string;
+  otherCategory?: string;
   nicheTags: string[];
   followersCount: number;
   followingCount: number;
@@ -498,6 +501,7 @@ export interface InfluencerApplication {
   instagramUrl?: string;
   followersCountBracket?: string;
   category: string;
+  otherCategory?: string;
   city: string;
   state?: string;
   collabTypePreference: 'Barter' | 'Paid' | 'Both';
@@ -513,6 +517,7 @@ export interface InfluencerApplication {
     clothingSize?: string;
     shoeSize?: string;
   };
+  nicheDetails?: Record<string, any>;
   status: 'Pending' | 'Reviewing' | 'Brand Allotted' | 'Opportunity Accepted' | 'Opportunity Declined' | 'Rejected' | 'Archived';
   opportunityRespondedAt?: string;
   allottedBrandId?: string;

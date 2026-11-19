@@ -29,27 +29,30 @@ const FOLLOWER_TIERS = [
   '500k+ (Celebrity / Mega Creator)'
 ];
 
-const CLOTHING_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
+const CLOTHING_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL', '3XL'];
+
+const DEFAULT_FORM_DATA = {
+  fullName: '',
+  whatsappNumber: '',
+  email: '',
+  instagramHandle: '',
+  followersCountBracket: '10k – 50k (Micro Creator)',
+  category: 'Fashion & Styling',
+  otherCategory: '',
+  city: '',
+  state: '',
+  collabTypePreference: 'Both' as 'Barter' | 'Paid' | 'Both',
+  languages: 'Hindi, English',
+  // Shipping Address
+  addressLine: '',
+  pincode: '',
+  landmark: '',
+  clothingSize: 'M',
+  shoeSize: ''
+};
 
 export const PublicInfluencerFormView: React.FC = () => {
-  const [formData, setFormData] = useState({
-    fullName: '',
-    whatsappNumber: '',
-    email: '',
-    instagramHandle: '',
-    followersCountBracket: '10k – 50k (Micro Creator)',
-    category: 'Fashion & Styling',
-    city: '',
-    state: '',
-    collabTypePreference: 'Both' as 'Barter' | 'Paid' | 'Both',
-    languages: 'Hindi, English',
-    // Shipping Address
-    addressLine: '',
-    pincode: '',
-    landmark: '',
-    clothingSize: 'M',
-    shoeSize: ''
-  });
+  const [formData, setFormData] = useState(DEFAULT_FORM_DATA);
 
   const [loading, setLoading] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -96,10 +99,16 @@ export const PublicInfluencerFormView: React.FC = () => {
       setErrorMsg('Please enter your current city');
       return;
     }
+    if (formData.category === 'Other' && !formData.otherCategory.trim()) {
+      setErrorMsg('Please specify your content niche');
+      return;
+    }
 
     setLoading(true);
 
     try {
+      const isFashion = formData.category === 'Fashion & Styling';
+
       const payload = {
         fullName: formData.fullName.trim(),
         whatsappNumber: formData.whatsappNumber.trim(),
@@ -107,6 +116,7 @@ export const PublicInfluencerFormView: React.FC = () => {
         instagramHandle: handleCleanInstagram(formData.instagramHandle),
         followersCountBracket: formData.followersCountBracket,
         category: formData.category,
+        otherCategory: formData.category === 'Other' ? formData.otherCategory.trim() : '',
         city: formData.city.trim(),
         state: formData.state.trim(),
         collabTypePreference: formData.collabTypePreference,
@@ -119,9 +129,15 @@ export const PublicInfluencerFormView: React.FC = () => {
           state: formData.state.trim(),
           pincode: formData.pincode.trim(),
           landmark: formData.landmark.trim(),
+          clothingSize: isFashion ? formData.clothingSize : '',
+          shoeSize: isFashion ? formData.shoeSize.trim() : ''
+        },
+        nicheDetails: isFashion ? {
           clothingSize: formData.clothingSize,
           shoeSize: formData.shoeSize.trim()
-        },
+        } : (formData.category === 'Other' && formData.otherCategory.trim() ? {
+          otherCategory: formData.otherCategory.trim()
+        } : {}),
         source: 'WhatsApp Campaign Link'
       };
 
@@ -183,23 +199,7 @@ export const PublicInfluencerFormView: React.FC = () => {
             <button
               onClick={() => {
                 setSubmitted(false);
-                setFormData({
-                  fullName: '',
-                  whatsappNumber: '',
-                  email: '',
-                  instagramHandle: '',
-                  followersCountBracket: '10k – 50k (Micro Creator)',
-                  category: 'Fashion & Styling',
-                  city: '',
-                  state: '',
-                  collabTypePreference: 'Both',
-                  languages: 'Hindi, English',
-                  addressLine: '',
-                  pincode: '',
-                  landmark: '',
-                  clothingSize: 'M',
-                  shoeSize: ''
-                });
+                setFormData(DEFAULT_FORM_DATA);
               }}
               className="w-full py-3 px-6 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition"
             >
@@ -433,7 +433,23 @@ export const PublicInfluencerFormView: React.FC = () => {
                   </select>
                 </div>
 
-                <div>
+                {formData.category === 'Other' && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Specify Your Content Niche <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      name="otherCategory"
+                      value={formData.otherCategory}
+                      onChange={handleChange}
+                      placeholder="e.g. Real Estate, Education, Pets, Art..."
+                      className="w-full px-3.5 py-2.5 bg-purple-50/50 border border-purple-300 rounded-xl text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none focus:border-purple-600 focus:bg-white focus:ring-2 focus:ring-purple-500/15 transition font-medium"
+                    />
+                  </div>
+                )}
+
+                <div className={formData.category === 'Other' ? 'sm:col-span-2' : ''}>
                   <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                     Languages You Create Content In
                   </label>
@@ -491,15 +507,20 @@ export const PublicInfluencerFormView: React.FC = () => {
               </div>
             </div>
 
-            {/* Section 4: Shipping Address for PR Packages */}
+            {/* Section 4: PR Package Delivery Address & Sizing */}
             <div>
               <div className="flex items-center gap-3 pb-3 mb-6 border-b border-slate-100">
                 <div className="w-7 h-7 rounded-xl bg-teal-100 text-teal-700 flex items-center justify-center font-bold text-xs shadow-2xs">
                   4
                 </div>
-                <h3 className="font-bold text-base sm:text-lg text-slate-900 tracking-tight">
-                  PR Package Delivery Address &amp; Sizing
-                </h3>
+                <div>
+                  <h3 className="font-bold text-base sm:text-lg text-slate-900 tracking-tight">
+                    {formData.category === 'Fashion & Styling' ? 'PR Package Delivery Address & Sizing' : 'PR Package Delivery Address'}
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Shipping destination for brand gifts &amp; PR kits
+                  </p>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -549,37 +570,40 @@ export const PublicInfluencerFormView: React.FC = () => {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Apparel / Clothing Size (for fashion PR kits)
-                  </label>
-                  <select
-                    name="clothingSize"
-                    value={formData.clothingSize}
-                    onChange={handleChange}
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm focus:outline-none focus:border-purple-600 focus:bg-white focus:ring-2 focus:ring-purple-500/15 transition font-medium"
-                  >
-                    {CLOTHING_SIZES.map(s => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {/* Sizing fields ONLY for Fashion & Styling */}
+                {formData.category === 'Fashion & Styling' && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        Apparel / Clothing Size (for fashion PR kits)
+                      </label>
+                      <select
+                        name="clothingSize"
+                        value={formData.clothingSize}
+                        onChange={handleChange}
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm focus:outline-none focus:border-purple-600 focus:bg-white focus:ring-2 focus:ring-purple-500/15 transition font-medium"
+                      >
+                        {CLOTHING_SIZES.map(s => (
+                          <option key={s} value={s}>{s}</option>
+                        ))}
+                      </select>
+                    </div>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Footwear / Shoe Size (UK/India)
-                  </label>
-                  <input
-                    type="text"
-                    name="shoeSize"
-                    value={formData.shoeSize}
-                    onChange={handleChange}
-                    placeholder="e.g. 6, 7, 8"
-                    className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none focus:border-purple-600 focus:bg-white focus:ring-2 focus:ring-purple-500/15 transition"
-                  />
-                </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                        Footwear / Shoe Size (UK/India)
+                      </label>
+                      <input
+                        type="text"
+                        name="shoeSize"
+                        value={formData.shoeSize}
+                        onChange={handleChange}
+                        placeholder="e.g. 6, 7, 8"
+                        className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 text-sm placeholder:text-slate-400 focus:outline-none focus:border-purple-600 focus:bg-white focus:ring-2 focus:ring-purple-500/15 transition"
+                      />
+                    </div>
+                  </>
+                )}
               </div>
             </div>
 

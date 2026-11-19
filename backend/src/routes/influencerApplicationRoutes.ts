@@ -48,6 +48,7 @@ router.post('/submit', async (req: Request, res: Response) => {
       instagramHandle,
       followersCountBracket,
       category,
+      otherCategory,
       city,
       state,
       collabTypePreference,
@@ -55,6 +56,7 @@ router.post('/submit', async (req: Request, res: Response) => {
       costPerStory,
       languages,
       shippingAddress,
+      nicheDetails,
       source
     } = req.body;
 
@@ -83,6 +85,7 @@ router.post('/submit', async (req: Request, res: Response) => {
       instagramUrl,
       followersCountBracket: followersCountBracket || '10k - 50k',
       category: category || 'Fashion',
+      otherCategory: otherCategory ? otherCategory.trim() : '',
       city: city ? city.trim() : 'Unspecified',
       state: state ? state.trim() : '',
       collabTypePreference: collabTypePreference || 'Both',
@@ -95,9 +98,10 @@ router.post('/submit', async (req: Request, res: Response) => {
         state: shippingAddress?.state?.trim() || state?.trim() || '',
         pincode: shippingAddress?.pincode?.trim() || '',
         landmark: shippingAddress?.landmark?.trim() || '',
-        clothingSize: shippingAddress?.clothingSize?.trim() || '',
-        shoeSize: shippingAddress?.shoeSize?.trim() || ''
+        clothingSize: shippingAddress?.clothingSize?.trim() || nicheDetails?.clothingSize?.trim() || '',
+        shoeSize: shippingAddress?.shoeSize?.trim() || nicheDetails?.shoeSize?.trim() || ''
       },
+      nicheDetails: typeof nicheDetails === 'object' && nicheDetails !== null ? nicheDetails : {},
       status: 'Pending',
       source: source || 'WhatsApp Campaign Link'
     });

@@ -39,6 +39,51 @@ const DELIVERABLES_PRESETS = [
   'Link in Bio (24 Hrs)'
 ];
 
+const getNicheDetailBadges = (app: InfluencerApplication): { label: string; value: string }[] => {
+  const badges: { label: string; value: string }[] = [];
+  const nd = app.nicheDetails || {};
+
+  const labelMap: Record<string, string> = {
+    clothingSize: 'Apparel Size',
+    shoeSize: 'Shoe Size',
+    fashionStyle: 'Style',
+    skinType: 'Skin Type',
+    skinTone: 'Skin Tone',
+    hairType: 'Hair Type',
+    dietaryPreference: 'Dietary',
+    fitnessFocus: 'Fitness Focus',
+    foodSpecialty: 'Specialty',
+    techEcosystem: 'OS & Eco',
+    techFocus: 'Tech Focus',
+    childAgeGroup: 'Child Age',
+    childGenderSize: 'Child Size',
+    gamingPlatform: 'Platform',
+    travelStyle: 'Travel Style',
+    lifestyleFocus: 'Lifestyle Focus',
+    financeFocus: 'Finance Focus',
+    comedyFormat: 'Comedy Format',
+    otherNicheNote: 'Specialty'
+  };
+
+  Object.entries(nd).forEach(([key, val]) => {
+    if (val && typeof val === 'string' && val.trim()) {
+      badges.push({
+        label: labelMap[key] || key,
+        value: val.trim()
+      });
+    }
+  });
+
+  if (!badges.some(b => b.label === 'Apparel Size') && app.shippingAddress?.clothingSize) {
+    badges.push({ label: 'Apparel Size', value: app.shippingAddress.clothingSize });
+  }
+  if (!badges.some(b => b.label === 'Shoe Size') && app.shippingAddress?.shoeSize) {
+    badges.push({ label: 'Shoe Size', value: app.shippingAddress.shoeSize });
+  }
+
+  return badges;
+};
+
 interface InfluencerApplicationsViewProps {
   isEmbedded?: boolean;
 }
@@ -691,7 +736,7 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                           <ArrowUpRight size={11} className="text-pink-400 group-hover:translate-x-0.5 transition" />
                         </a>
                         <div className="text-xs font-bold text-slate-800 mt-1.5">
-                          {item.category}
+                          {item.category === 'Other' && item.otherCategory ? `Other (${item.otherCategory})` : item.category}
                         </div>
                         <div className="text-[11px] text-slate-500">
                           {item.followersCountBracket}
@@ -932,7 +977,9 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                       </a>
                     </div>
                     <div className="flex flex-wrap items-center gap-1.5 text-xs text-slate-500 mt-1 font-medium">
-                      <span className="font-semibold text-slate-700">{selectedApp.category}</span>
+                      <span className="font-semibold text-slate-700">
+                        {selectedApp.category === 'Other' && selectedApp.otherCategory ? `Other (${selectedApp.otherCategory})` : selectedApp.category}
+                      </span>
                       <span>&bull;</span>
                       <span>{selectedApp.city}{selectedApp.state ? `, ${selectedApp.state}` : ''}</span>
                       {selectedApp.followersCountBracket && (
@@ -1274,20 +1321,19 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                     <div className="text-xs text-slate-700 font-medium truncate" title={`${selectedApp.shippingAddress?.addressLine || 'Address provided'}, ${selectedApp.shippingAddress?.city || selectedApp.city}, ${selectedApp.shippingAddress?.state || selectedApp.state} - ${selectedApp.shippingAddress?.pincode || ''}`}>
                       {selectedApp.shippingAddress?.addressLine || 'Address provided'}, {selectedApp.shippingAddress?.city || selectedApp.city}
                     </div>
-                    {(selectedApp.shippingAddress?.clothingSize || selectedApp.shippingAddress?.shoeSize) && (
-                      <div className="flex items-center gap-2 pt-0.5 text-[11px] font-bold text-slate-700">
-                        {selectedApp.shippingAddress?.clothingSize && (
-                          <span className="bg-white border border-emerald-200 px-2 py-0.5 rounded-md shadow-2xs">
-                            Clothing: <strong className="text-emerald-950">{selectedApp.shippingAddress.clothingSize}</strong>
-                          </span>
-                        )}
-                        {selectedApp.shippingAddress?.shoeSize && (
-                          <span className="bg-white border border-emerald-200 px-2 py-0.5 rounded-md shadow-2xs">
-                            Footwear: <strong className="text-emerald-950">{selectedApp.shippingAddress.shoeSize}</strong>
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    {(() => {
+                      const badges = getNicheDetailBadges(selectedApp);
+                      if (badges.length === 0) return null;
+                      return (
+                        <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                          {badges.slice(0, 3).map((b, idx) => (
+                            <span key={idx} className="bg-white border border-emerald-200 px-2 py-0.5 rounded-md text-[11px] font-bold text-slate-700 shadow-2xs">
+                              {b.label}: <strong className="text-emerald-950">{b.value}</strong>
+                            </span>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               ) : allotForm.collabType === 'Paid' ? (
@@ -1323,20 +1369,19 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                       {selectedApp.shippingAddress?.addressLine || 'Address provided'}, {selectedApp.shippingAddress?.city || selectedApp.city}, {selectedApp.shippingAddress?.state || selectedApp.state} - {selectedApp.shippingAddress?.pincode || ''}
                       {selectedApp.shippingAddress?.landmark ? ` (Near ${selectedApp.shippingAddress.landmark})` : ''}
                     </div>
-                    {(selectedApp.shippingAddress?.clothingSize || selectedApp.shippingAddress?.shoeSize) && (
-                      <div className="flex items-center gap-2 shrink-0 text-[11px] font-bold text-slate-700">
-                        {selectedApp.shippingAddress?.clothingSize && (
-                          <span className="bg-white border border-emerald-200 px-2.5 py-0.5 rounded-md shadow-2xs">
-                            Clothing: <strong className="text-emerald-950">{selectedApp.shippingAddress.clothingSize}</strong>
-                          </span>
-                        )}
-                        {selectedApp.shippingAddress?.shoeSize && (
-                          <span className="bg-white border border-emerald-200 px-2.5 py-0.5 rounded-md shadow-2xs">
-                            Footwear: <strong className="text-emerald-950">{selectedApp.shippingAddress.shoeSize}</strong>
-                          </span>
-                        )}
-                      </div>
-                    )}
+                    {(() => {
+                      const badges = getNicheDetailBadges(selectedApp);
+                      if (badges.length === 0) return null;
+                      return (
+                        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                          {badges.slice(0, 3).map((b, idx) => (
+                            <span key={idx} className="bg-white border border-emerald-200 px-2.5 py-0.5 rounded-md text-[11px] font-bold text-slate-700 shadow-2xs">
+                              {b.label}: <strong className="text-emerald-950">{b.value}</strong>
+                            </span>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               )}
@@ -1648,7 +1693,7 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                 <div className="bg-white p-2.5 rounded-xl border border-slate-100">
                   <span className="text-slate-400 font-bold block text-[10px] uppercase">Primary Content Niche</span>
                   <span className="font-extrabold text-slate-800 block mt-1 text-xs">
-                    {selectedApp.category}
+                    {selectedApp.category === 'Other' && selectedApp.otherCategory ? `Other (${selectedApp.otherCategory})` : selectedApp.category}
                   </span>
                 </div>
 
@@ -1736,18 +1781,27 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                   )}
                 </div>
 
-                <div className="flex gap-2 pt-1.5 border-t border-slate-100">
-                  {selectedApp.shippingAddress?.clothingSize && (
-                    <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 font-extrabold text-[11px]">
-                      Apparel Size: {selectedApp.shippingAddress.clothingSize}
-                    </span>
-                  )}
-                  {selectedApp.shippingAddress?.shoeSize && (
-                    <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-800 border border-blue-200 font-extrabold text-[11px]">
-                      Footwear Size: {selectedApp.shippingAddress.shoeSize}
-                    </span>
-                  )}
-                </div>
+                {(() => {
+                  const badges = getNicheDetailBadges(selectedApp);
+                  if (badges.length === 0) return null;
+                  return (
+                    <div className="pt-2 border-t border-slate-100">
+                      <span className="text-slate-400 font-bold block text-[10px] uppercase mb-1">
+                        {selectedApp.category} Specifications
+                      </span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {badges.map((b, idx) => (
+                          <span
+                            key={idx}
+                            className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-900 border border-blue-200 font-bold text-[11px] shadow-2xs"
+                          >
+                            {b.label}: <strong className="text-blue-950 font-black">{b.value}</strong>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
