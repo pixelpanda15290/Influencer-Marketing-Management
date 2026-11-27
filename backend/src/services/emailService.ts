@@ -647,3 +647,165 @@ Ad2ship Creator Operations`;
   console.log(`=================================================\n`);
   return true;
 };
+
+export interface BrandAllotmentCancelledEmailPayload {
+  influencerEmail: string;
+  influencerName: string;
+  brandName: string;
+  productName?: string;
+  collabType?: string;
+  managerName?: string;
+  reason?: string;
+}
+
+export const sendBrandAllotmentCancelledEmail = async (
+  payload: BrandAllotmentCancelledEmailPayload
+): Promise<boolean> => {
+  const {
+    influencerEmail,
+    influencerName,
+    brandName,
+    productName = '',
+    collabType = '',
+    managerName = 'Campaign Operations Team',
+    reason = ''
+  } = payload;
+
+  const appName = (process.env.APP_NAME || 'Ad2ship Influencer Operations').trim();
+  const fromAddress = (process.env.FROM_EMAIL || process.env.SMTP_USER || 'reena.lalwani@ad2ship.com').trim();
+  const brandClean = (brandName || '').trim();
+  const productClean = (productName || '').trim();
+  const firstName = (influencerName || 'Creator').trim().split(' ')[0];
+
+  const subject = `Collaboration Update: ${brandClean} x ${influencerName} — Campaign Allotment Cancelled`;
+
+  const textContent = `Dear ${firstName},
+
+We are writing to inform you that the brand collaboration allotment for ${brandClean}${productClean ? ` (${productClean})` : ''} has been cancelled/withdrawn from our current campaign roster.
+
+DETAILS:
+• Brand: ${brandClean}
+${productClean ? `• Product: ${productClean}\n` : ''}${collabType ? `• Collaboration Mode: ${collabType}\n` : ''}• Campaign Manager: ${managerName}
+${reason && reason.trim() ? `• Note: ${reason.trim()}\n` : ''}
+You do not need to take any action or proceed with this campaign. Thank you for being a part of our creator network — our team will reach out to you soon with upcoming brand collaborations matching your profile.
+
+Best regards,
+${managerName}
+Ad2ship Creator Operations`;
+
+  const htmlContent = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${subject}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body style="margin: 0; padding: 28px 12px; background-color: #f8fafc; font-family: 'Roboto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f8fafc;">
+    <tr>
+      <td align="center">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width: 560px; width: 100%; background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 14px; overflow: hidden;">
+          <tr>
+            <td style="background: linear-gradient(135deg, #475569 0%, #64748b 100%); padding: 24px 28px; text-align: left;">
+              <h1 style="margin: 0; font-size: 19px; font-weight: 600; color: #ffffff;">
+                Campaign Allotment Update
+              </h1>
+              <div style="font-size: 13px; color: #e2e8f0; margin-top: 4px;">
+                Collaboration cancelled for <strong>${brandClean}</strong>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td style="padding: 26px 28px;">
+              <div style="font-size: 15px; font-weight: 600; color: #1e293b; margin-bottom: 8px;">
+                Dear ${firstName},
+              </div>
+              <p style="font-size: 13.5px; color: #475569; line-height: 1.6; margin: 0 0 18px 0;">
+                We are writing to let you know that the brand collaboration allotment with <strong>${brandClean}</strong>${productClean ? ` (<strong>${productClean}</strong>)` : ''} has been cancelled/withdrawn from our active campaign roster.
+              </p>
+
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; margin-bottom: 18px;">
+                <tr>
+                  <td width="40%" style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9;">Brand</td>
+                  <td width="60%" align="right" style="padding: 10px 16px; font-size: 13px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #f1f5f9;">${brandClean}</td>
+                </tr>
+                ${productClean ? `
+                <tr>
+                  <td width="40%" style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9;">Product</td>
+                  <td width="60%" align="right" style="padding: 10px 16px; font-size: 13px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #f1f5f9;">${productClean}</td>
+                </tr>` : ''}
+                ${collabType ? `
+                <tr>
+                  <td width="40%" style="padding: 10px 16px; font-size: 13px; color: #64748b; border-bottom: 1px solid #f1f5f9;">Collab Mode</td>
+                  <td width="60%" align="right" style="padding: 10px 16px; font-size: 13px; font-weight: 500; color: #334155; border-bottom: 1px solid #f1f5f9;">${collabType}</td>
+                </tr>` : ''}
+                <tr>
+                  <td width="40%" style="padding: 10px 16px; font-size: 13px; color: #64748b;">Status</td>
+                  <td width="60%" align="right" style="padding: 10px 16px; font-size: 12px; font-weight: 600; color: #dc2626;">Allotment Cancelled</td>
+                </tr>
+              </table>
+
+              <p style="font-size: 13px; color: #475569; line-height: 1.55; margin: 0;">
+                No action is needed from your side for this campaign. Our team will continue to share upcoming brand collaborations that match your profile.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color: #f8fafc; border-top: 1px solid #e2e8f0; padding: 16px 24px; text-align: center; font-size: 11.5px; color: #64748b;">
+              Best regards, ${managerName}<br>
+              &copy; ${new Date().getFullYear()} ${appName}
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>`;
+
+  if (process.env.SMTP_USER && process.env.SMTP_PASS) {
+    try {
+      const transporter = getTransporter();
+      const info = await transporter.sendMail({
+        from: `"${appName}" <${fromAddress}>`,
+        to: influencerEmail,
+        subject,
+        text: textContent,
+        html: htmlContent
+      });
+      console.log(`[SMTP Success] Allotment cancellation email delivered to ${influencerEmail} (MessageId: ${info.messageId})`);
+      return true;
+    } catch (smtpErr: any) {
+      console.error(`[SMTP Error sending cancellation email to ${influencerEmail}]:`, smtpErr?.message || smtpErr);
+    }
+  }
+
+  const webhookUrl = (process.env.GMAIL_WEBHOOK_URL || '').trim();
+  if (webhookUrl && webhookUrl.includes('script.google.com')) {
+    try {
+      const webhookRes = await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        redirect: 'follow',
+        body: JSON.stringify({
+          to: influencerEmail,
+          subject,
+          text: textContent,
+          html: htmlContent
+        })
+      });
+      if (webhookRes.ok || webhookRes.status === 200 || webhookRes.status === 302) {
+        console.log(`[Webhook Success] Allotment cancellation email delivered to ${influencerEmail}`);
+        return true;
+      }
+    } catch (webhookErr: any) {
+      console.error(`[Webhook Error]`, webhookErr?.message || webhookErr);
+    }
+  }
+
+  console.log(`[ALLOTMENT CANCELLED EMAIL SIMULATION] To: ${influencerEmail} | Brand: ${brandClean}`);
+  return true;
+};

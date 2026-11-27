@@ -3,7 +3,7 @@ import {
   Sparkles, Search, Filter, Phone, Mail, Instagram, CheckCircle2, 
   Clock, XCircle, ChevronRight, Copy, Check, ExternalLink, MessageCircle,
   Building2, DollarSign, Package, UserCheck, AlertCircle, Loader2,
-  RefreshCw, MapPin, Eye, FileText, Send, ArrowUpRight, User, Tag, Gift, Layers, Plus, IndianRupee, ChevronDown, Link2, X, AlertTriangle
+  RefreshCw, MapPin, Eye, FileText, Send, ArrowUpRight, User, Tag, Gift, Layers, Plus, IndianRupee, ChevronDown, Link2, X, AlertTriangle, Trash2
 } from 'lucide-react';
 import { api } from '../services/api';
 import { InfluencerApplication, AllotmentHistoryItem, Brand, BrandRequirement } from '../types';
@@ -487,6 +487,39 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
   };
 
   const [updatingAllotmentId, setUpdatingAllotmentId] = useState<string | null>(null);
+  const [removeAllotmentTarget, setRemoveAllotmentTarget] = useState<{
+    appId: string;
+    allotmentId: string;
+    brandName: string;
+    productName?: string;
+    influencerName: string;
+    influencerEmail: string;
+  } | null>(null);
+  const [sendRemovalEmail, setSendRemovalEmail] = useState(true);
+  const [removingAllotment, setRemovingAllotment] = useState(false);
+
+  const handleConfirmRemoveAllotment = async () => {
+    if (!removeAllotmentTarget) return;
+    setRemovingAllotment(true);
+    try {
+      const res = await api.delete(
+        `/influencer-applications/${removeAllotmentTarget.appId}/allotments/${removeAllotmentTarget.allotmentId}?sendEmail=${sendRemovalEmail}`
+      );
+      if (res.success && res.application) {
+        setSelectedApp(res.application);
+        setApplications(prev => prev.map(a => (a._id === removeAllotmentTarget.appId ? res.application : a)));
+        setRemoveAllotmentTarget(null);
+        fetchApplications();
+        fetchRequirements();
+      } else {
+        alert(res.message || 'Failed to remove allotment.');
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error removing allotment.');
+    } finally {
+      setRemovingAllotment(false);
+    }
+  };
 
   const getAllotmentsForApp = (app: InfluencerApplication): AllotmentHistoryItem[] => {
     if (Array.isArray(app.allotmentHistory) && app.allotmentHistory.length > 0) {
@@ -2468,6 +2501,24 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                               >
                                 <MessageCircle size={10} /> WhatsApp
                               </a>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSendRemovalEmail(true);
+                                  setRemoveAllotmentTarget({
+                                    appId: selectedApp._id,
+                                    allotmentId: entryId,
+                                    brandName: entry.brandName,
+                                    productName: entry.productName,
+                                    influencerName: selectedApp.fullName,
+                                    influencerEmail: selectedApp.email
+                                  });
+                                }}
+                                className="px-2 py-0.5 rounded bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/70 font-bold inline-flex items-center gap-1 cursor-pointer transition"
+                                title="Remove this brand/product allotment and notify creator"
+                              >
+                                <Trash2 size={10} /> Remove
+                              </button>
                             </div>
                           </div>
                         </div>
@@ -2502,6 +2553,83 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                 className="py-3 px-4 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs sm:text-sm transition cursor-pointer"
               >
                 Close
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ====================================================================== */}
+      {/* REMOVE ALLOTMENT CONFIRMATION MODAL (With Cancellation Email Option)   */}
+      {/* ====================================================================== */}
+      {removeAllotmentTarget && (
+        <Modal
+          isOpen={!!removeAllotmentTarget}
+          onClose={() => {
+            if (!removingAllotment) setRemoveAllotmentTarget(null);
+          }}
+          title="Remove Brand Allotment"
+          maxWidth="max-w-md"
+        >
+          <div className="space-y-4 text-xs">
+            <div className="flex items-start gap-3 p-4 bg-rose-50 border border-rose-200/80 rounded-2xl">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-600 flex items-center justify-center shrink-0">
+                <AlertTriangle size={20} />
+              </div>
+              <div className="space-y-1">
+                <h4 className="font-extrabold text-slate-900 text-sm">Remove this allotment?</h4>
+                <p className="text-slate-600 leading-relaxed">
+                  Are you sure you want to remove{' '}
+                  <strong className="text-slate-900">
+                    {removeAllotmentTarget.brandName}
+                    {removeAllotmentTarget.productName ? ` (${removeAllotmentTarget.productName})` : ''}
+                  </strong>{' '}
+                  from <strong className="text-slate-900">{removeAllotmentTarget.influencerName}</strong>?
+                </p>
+              </div>
+            </div>
+
+            {removeAllotmentTarget.influencerEmail && (
+              <label className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-2.5 cursor-pointer hover:border-purple-300 transition">
+                <input
+                  type="checkbox"
+                  checked={sendRemovalEmail}
+                  onChange={e => setSendRemovalEmail(e.target.checked)}
+                  className="rounded text-purple-600 focus:ring-purple-500"
+                />
+                <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5 min-w-0">
+                  <Mail size={13} className="text-purple-600 shrink-0" />
+                  <span className="truncate">
+                    Send cancellation email to {removeAllotmentTarget.influencerEmail}
+                  </span>
+                </div>
+              </label>
+            )}
+
+            <div className="flex justify-end items-center gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setRemoveAllotmentTarget(null)}
+                disabled={removingAllotment}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold cursor-pointer disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmRemoveAllotment}
+                disabled={removingAllotment}
+                className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-black flex items-center gap-1.5 shadow-sm cursor-pointer disabled:opacity-50"
+              >
+                {removingAllotment ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" /> Removing...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 size={13} /> Yes, Remove Allotment
+                  </>
+                )}
               </button>
             </div>
           </div>

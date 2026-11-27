@@ -3,7 +3,7 @@ import mongoose from 'mongoose';
 import { InfluencerApplication, Brand, BrandRequirement, Influencer, User } from '../models/allModels';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { logActivity } from '../middleware/auditLog';
-import { sendBrandAllotmentEmail } from '../services/emailService';
+import { sendBrandAllotmentEmail, sendBrandAllotmentCancelledEmail } from '../services/emailService';
 
 const router = Router();
 
@@ -1229,6 +1229,187 @@ router.patch('/:id/allotments/:allotmentId/status', authenticateToken, async (re
     });
   } catch (error: any) {
     console.error('Error updating allotment status:', error);
+    return res.status(500).json({ success: false, message: error.message || 'Server error' });
+  }
+});
+
+// ============================================================================
+// 5c. PROTECTED ROUTE: Remove Specific Brand/Product Allotment & Send Email
+// DELETE /api/v1/influencer-applications/:id/allotments/:allotmentId
+// ============================================================================
+router.delete('/:id/allotments/:allotmentId', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id, allotmentId } = req.params;
+    const sendEmail = req.query.sendEmail !== 'false' && req.body?.sendEmail !== false;
+
+    const appItem = await InfluencerApplication.findById(id);
+    if (!appItem || appItem.isDeleted) {
+      return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+
+    // Materialize legacy single allotment into history if needed
+    if ((!appItem.allotmentHistory || appItem.allotmentHistory.length === 0) && appItem.allottedBrandName) {
+      appItem.allotmentHistory = [{
+        brandId: appItem.allottedBrandId,
+        brandName: appItem.allottedBrandName,
+        requirementId: appItem.allottedRequirementId,
+        productName: appItem.allottedProductName || '',
+        productLink: appItem.allottedProductLink || '',
+        collabDescription: appItem.allottedCollabDescription || '',
+        collabType: appItem.allottedCollabType || 'Barter',
+        deliverables: appItem.allottedDeliverables || '',
+        commercialAmount: appItem.allottedCommercial || 0,
+        managerName: appItem.allottedManagerName || '',
+        managerNotes: appItem.managerNotes || '',
+        status: appItem.status || 'Brand Allotted',
+        collabStatus: 'Pending',
+        whatsappMessageText: appItem.whatsappMessageText || '',
+        respondedAt: appItem.opportunityRespondedAt,
+        allottedAt: appItem.allottedAt || appItem.createdAt
+      }];
+    }
+
+    const history = appItem.allotmentHistory || [];
+    let removeIdx = -1;
+    if (allotmentId === 'legacy-0' && history.length > 0) {
+      removeIdx = 0;
+    } else {
+      removeIdx = history.findIndex((h: any) => String(h._id) === allotmentId);
+    }
+
+    if (removeIdx < 0) {
+      return res.status(404).json({ success: false, message: 'Allotment entry not found' });
+    }
+
+    const removedEntry: any = history[removeIdx];
+    history.splice(removeIdx, 1);
+    appItem.allotmentHistory = history;
+
+    // Soft-delete matching active tracking record if present
+    try {
+      const trackingFilter: any = removedEntry.trackingInfluencerId
+        ? { _id: removedEntry.trackingInfluencerId, isDeleted: { $ne: true } }
+        : {
+            $or: [
+              { influencerInstagramId: appItem.instagramHandle, brandName: removedEntry.brandName },
+              { phone: appItem.whatsappNumber, brandName: removedEntry.brandName }
+            ],
+            isDeleted: { $ne: true },
+            ...(removedEntry.productName ? { productName: removedEntry.productName } : {})
+          };
+
+      await Influencer.updateMany(trackingFilter, {
+        $set: {
+          isDeleted: true,
+          deletedAt: new Date(),
+          deletedBy: req.user?._id
+        }
+      });
+    } catch (syncErr) {
+      console.warn('Could not soft-delete linked Influencer tracking record:', syncErr);
+    }
+
+    // Update top-level application fields to latest remaining allotment, or reset to Pending
+    if (history.length > 0) {
+      const latest: any = history[history.length - 1];
+      appItem.status = (latest.status as any) || 'Brand Allotted';
+      appItem.opportunityRespondedAt = latest.respondedAt;
+      appItem.allottedBrandId = latest.brandId;
+      appItem.allottedBrandName = latest.brandName;
+      appItem.allottedRequirementId = latest.requirementId;
+      appItem.allottedProductName = latest.productName || '';
+      appItem.allottedProductLink = latest.productLink || '';
+      appItem.allottedCollabDescription = latest.collabDescription || '';
+      appItem.allottedCollabType = latest.collabType;
+      appItem.allottedDeliverables = latest.deliverables || '';
+      appItem.allottedCommercial = latest.commercialAmount || 0;
+      appItem.allottedManagerName = latest.managerName || '';
+      appItem.allottedAt = latest.allottedAt;
+      appItem.managerNotes = latest.managerNotes || '';
+      appItem.whatsappMessageText = latest.whatsappMessageText || '';
+    } else {
+      appItem.status = 'Pending';
+      appItem.opportunityRespondedAt = undefined;
+      appItem.allottedBrandId = undefined;
+      appItem.allottedBrandName = '';
+      appItem.allottedRequirementId = undefined;
+      appItem.allottedProductName = '';
+      appItem.allottedProductLink = '';
+      appItem.allottedCollabDescription = '';
+      appItem.allottedRequirementsSummary = '';
+      appItem.allottedCollabType = undefined;
+      appItem.allottedDeliverables = '';
+      appItem.allottedCommercial = 0;
+      appItem.allottedManagerId = undefined;
+      appItem.allottedManagerName = '';
+      appItem.allottedAt = undefined;
+      appItem.managerNotes = '';
+      appItem.whatsappMessageText = '';
+    }
+
+    await appItem.save();
+
+    // If removed allotment belonged to a BrandRequirement with 0 remaining allotments, revert In Progress -> Open
+    if (removedEntry.requirementId) {
+      try {
+        const remainingCount = await InfluencerApplication.countDocuments({
+          isDeleted: { $ne: true },
+          $or: [
+            { allottedRequirementId: removedEntry.requirementId },
+            { 'allotmentHistory.requirementId': removedEntry.requirementId }
+          ]
+        });
+        if (remainingCount === 0) {
+          await BrandRequirement.updateOne(
+            { _id: removedEntry.requirementId, status: 'In Progress' },
+            { $set: { status: 'Open' } }
+          );
+        }
+      } catch (reqErr) {
+        console.warn('Could not update BrandRequirement status after allotment removal:', reqErr);
+      }
+    }
+
+    const managerName = req.user?.name || 'Campaign Operations Manager';
+
+    // Dispatch cancellation email in background
+    if (sendEmail && appItem.email) {
+      setImmediate(async () => {
+        try {
+          await sendBrandAllotmentCancelledEmail({
+            influencerEmail: appItem.email,
+            influencerName: appItem.fullName,
+            brandName: removedEntry.brandName,
+            productName: removedEntry.productName || undefined,
+            collabType: removedEntry.collabType,
+            managerName
+          });
+        } catch (emailErr) {
+          console.error('[Background Email Dispatch] Error sending cancellation email:', emailErr);
+        }
+      });
+    }
+
+    await logActivity({
+      userId: req.user?._id,
+      userName: managerName,
+      userEmail: req.user?.email,
+      userRole: req.user?.role,
+      module: 'Influencer Onboarding',
+      action: 'REMOVE_ALLOTMENT',
+      entity: 'InfluencerApplication',
+      entityId: appItem._id.toString(),
+      details: `Removed brand allotment '${removedEntry.brandName}'${removedEntry.productName ? ` [Product: ${removedEntry.productName}]` : ''} from influencer ${appItem.fullName}.${sendEmail && appItem.email ? ' Cancellation email dispatched.' : ''}`
+    });
+
+    const [enriched] = await enrichApplicationAllotments([appItem.toObject()]);
+    return res.json({
+      success: true,
+      message: `Allotment for '${removedEntry.brandName}' removed${sendEmail && appItem.email ? ` and cancellation email sent to ${appItem.email}` : ''}.`,
+      application: enriched
+    });
+  } catch (error: any) {
+    console.error('Error removing allotment:', error);
     return res.status(500).json({ success: false, message: error.message || 'Server error' });
   }
 });
