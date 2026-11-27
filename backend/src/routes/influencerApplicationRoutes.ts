@@ -35,6 +35,152 @@ const formatCleanPhone = (rawPhone: string) => {
   return digits;
 };
 
+const COMPLETED_STATUSES = new Set(['Completed', 'Settled', 'Approved']);
+const LONG_PENDING_DAYS_THRESHOLD = 7;
+
+// Enrich applications with multi-brand allotment history, live Influencer tracking status, and pending aging
+const enrichApplicationAllotments = async (apps: any[]) => {
+  if (!Array.isArray(apps) || apps.length === 0) return apps;
+
+  const trackingIds: mongoose.Types.ObjectId[] = [];
+  const handles = new Set<string>();
+  const phones = new Set<string>();
+
+  apps.forEach(app => {
+    if (app.instagramHandle) handles.add(app.instagramHandle);
+    if (app.whatsappNumber) phones.add(app.whatsappNumber);
+    if (Array.isArray(app.allotmentHistory)) {
+      app.allotmentHistory.forEach((h: any) => {
+        if (h.trackingInfluencerId && mongoose.Types.ObjectId.isValid(String(h.trackingInfluencerId))) {
+          trackingIds.push(new mongoose.Types.ObjectId(String(h.trackingInfluencerId)));
+        }
+      });
+    }
+  });
+
+  const orConditions: any[] = [];
+  if (trackingIds.length > 0) orConditions.push({ _id: { $in: trackingIds } });
+  if (handles.size > 0) orConditions.push({ influencerInstagramId: { $in: Array.from(handles) } });
+  if (phones.size > 0) orConditions.push({ phone: { $in: Array.from(phones) } });
+
+  const trackingDocs = orConditions.length > 0
+    ? await Influencer.find({ isDeleted: { $ne: true }, $or: orConditions })
+        .select('_id brandName productName brandRequirementId influencerInstagramId phone status contentLink viewsCount ordersGenerated parcelSentAt completedAt connectedDate createdAt')
+        .lean()
+    : [];
+
+  const trackingById = new Map<string, any>();
+  trackingDocs.forEach((t: any) => trackingById.set(String(t._id), t));
+
+  const nowMs = Date.now();
+
+  return apps.map(app => {
+    let rawHistory: any[] = Array.isArray(app.allotmentHistory) ? [...app.allotmentHistory] : [];
+    if (rawHistory.length === 0 && app.allottedBrandName) {
+      rawHistory = [{
+        _id: 'legacy-0',
+        brandId: app.allottedBrandId,
+        brandName: app.allottedBrandName,
+        requirementId: app.allottedRequirementId,
+        productName: app.allottedProductName || '',
+        productLink: app.allottedProductLink || '',
+        collabDescription: app.allottedCollabDescription || '',
+        collabType: app.allottedCollabType || 'Barter',
+        deliverables: app.allottedDeliverables || '',
+        commercialAmount: app.allottedCommercial || 0,
+        managerName: app.allottedManagerName || '',
+        managerNotes: app.managerNotes || '',
+        status: app.status || 'Brand Allotted',
+        collabStatus: 'Pending',
+        whatsappMessageText: app.whatsappMessageText || '',
+        respondedAt: app.opportunityRespondedAt,
+        allottedAt: app.allottedAt || app.createdAt
+      }];
+    }
+
+    const enrichedHistory = rawHistory.map((entry: any) => {
+      let matchedTracking = entry.trackingInfluencerId
+        ? trackingById.get(String(entry.trackingInfluencerId))
+        : null;
+
+      if (!matchedTracking) {
+        const entryBrand = (entry.brandName || '').trim().toLowerCase();
+        const entryProd = (entry.productName || '').trim().toLowerCase();
+        const entryReqId = entry.requirementId ? String(entry.requirementId) : '';
+
+        matchedTracking = trackingDocs.find((t: any) => {
+          const sameCreator =
+            (app.instagramHandle && t.influencerInstagramId === app.instagramHandle) ||
+            (app.whatsappNumber && t.phone === app.whatsappNumber);
+          if (!sameCreator) return false;
+          if ((t.brandName || '').trim().toLowerCase() !== entryBrand) return false;
+          if (entryReqId && t.brandRequirementId && String(t.brandRequirementId) === entryReqId) return true;
+          if (entryProd && (t.productName || '').trim().toLowerCase() === entryProd) return true;
+          if (!entryProd && !(t.productName || '').trim()) return true;
+          return false;
+        });
+      }
+
+      const executionStatus = matchedTracking?.status || entry.collabStatus || 'Pending';
+      const isDeclined = entry.status === 'Opportunity Declined';
+      const isCompleted = COMPLETED_STATUSES.has(executionStatus);
+      const isReturned = executionStatus === 'Product Returned';
+      const rawParcelSentAt =
+        matchedTracking?.parcelSentAt ||
+        entry.parcelSentAt ||
+        (executionStatus === 'Parcel Sent' ? (entry.allottedAt || app.allottedAt) : null);
+      const isParcelTimerActive =
+        Boolean(rawParcelSentAt) &&
+        !isCompleted &&
+        !isDeclined &&
+        !isReturned &&
+        executionStatus !== 'Pending' &&
+        executionStatus !== 'In Discussion';
+      const parcelDaysElapsed = isParcelTimerActive
+        ? Math.max(0, Math.floor((nowMs - new Date(rawParcelSentAt).getTime()) / (1000 * 60 * 60 * 24)))
+        : 0;
+      const parcelDaysLeft = isParcelTimerActive ? Math.max(0, 14 - parcelDaysElapsed) : undefined;
+      const isParcelOverdue = isParcelTimerActive && parcelDaysElapsed >= 14;
+      const refDate = rawParcelSentAt || entry.allottedAt || app.allottedAt || app.createdAt;
+      const daysPending = (!isCompleted && !isDeclined && !isReturned && refDate)
+        ? Math.max(0, Math.floor((nowMs - new Date(refDate).getTime()) / (1000 * 60 * 60 * 24)))
+        : 0;
+      const isLongPending = isParcelOverdue || (!isCompleted && !isDeclined && !isReturned && daysPending >= LONG_PENDING_DAYS_THRESHOLD);
+
+      return {
+        ...entry,
+        trackingInfluencerId: entry.trackingInfluencerId || matchedTracking?._id,
+        executionStatus,
+        daysPending,
+        isLongPending,
+        isCompleted,
+        isParcelTimerActive,
+        parcelDaysElapsed,
+        parcelDaysLeft,
+        isParcelOverdue,
+        contentLink: matchedTracking?.contentLink || '',
+        viewsCount: matchedTracking?.viewsCount || 0,
+        ordersGenerated: matchedTracking?.ordersGenerated || 0,
+        parcelSentAt: rawParcelSentAt || undefined,
+        completedAt: matchedTracking?.completedAt || entry.completedAt
+      };
+    });
+
+    const completedCollabsCount = enrichedHistory.filter((h: any) => h.isCompleted).length;
+    const longPendingCollabsCount = enrichedHistory.filter((h: any) => h.isLongPending).length;
+    const activeCollabsCount = enrichedHistory.filter((h: any) => !h.isCompleted && h.status !== 'Opportunity Declined').length;
+
+    return {
+      ...app,
+      allotmentHistory: enrichedHistory,
+      totalAllotments: enrichedHistory.length,
+      completedCollabsCount,
+      longPendingCollabsCount,
+      activeCollabsCount
+    };
+  });
+};
+
 // ============================================================================
 // 1. PUBLIC ROUTE: Submit Influencer Onboarding Form (Sent via WhatsApp Link)
 // POST /api/v1/influencer-applications/submit
@@ -167,7 +313,9 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         { whatsappNumber: regex },
         { city: regex },
         { allottedBrandName: regex },
-        { allottedProductName: regex }
+        { allottedProductName: regex },
+        { 'allotmentHistory.brandName': regex },
+        { 'allotmentHistory.productName': regex }
       ];
     }
 
@@ -213,9 +361,11 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
       bothCollab: 0
     };
 
+    const enrichedItems = await enrichApplicationAllotments(items);
+
     return res.json({
       success: true,
-      items,
+      items: enrichedItems,
       totalCount,
       page: pageNum,
       totalPages: Math.ceil(totalCount / limitNum),
@@ -467,7 +617,7 @@ const renderOpportunityResponseHtml = (params: {
 // ============================================================================
 router.get('/respond', async (req: Request, res: Response) => {
   try {
-    const { id, action } = req.query;
+    const { id, action, allotmentId } = req.query;
 
     if (!id || typeof id !== 'string' || !mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).send(renderOpportunityResponseHtml({
@@ -501,35 +651,63 @@ router.get('/respond', async (req: Request, res: Response) => {
     }
 
     const newStatus = isAccept ? 'Opportunity Accepted' : 'Opportunity Declined';
-    appItem.status = newStatus;
-    appItem.opportunityRespondedAt = new Date();
+    let targetBrandName = appItem.allottedBrandName;
+    let targetProductName = appItem.allottedProductName;
+    let targetDeliverables = appItem.allottedDeliverables;
+    let targetCollabType = appItem.allottedCollabType;
+    let targetManagerName = appItem.allottedManagerName;
+    let targetTrackingId: any = undefined;
+
     if (Array.isArray(appItem.allotmentHistory) && appItem.allotmentHistory.length > 0) {
-      const lastIdx = appItem.allotmentHistory.length - 1;
-      appItem.allotmentHistory[lastIdx].status = newStatus;
+      let targetIdx = appItem.allotmentHistory.length - 1;
+      if (allotmentId && typeof allotmentId === 'string') {
+        const foundIdx = appItem.allotmentHistory.findIndex((h: any) => String(h._id) === allotmentId);
+        if (foundIdx >= 0) targetIdx = foundIdx;
+      }
+      const targetEntry = appItem.allotmentHistory[targetIdx];
+      targetEntry.status = newStatus;
+      targetEntry.respondedAt = new Date();
+      if (isAccept && (!targetEntry.collabStatus || targetEntry.collabStatus === 'Pending')) {
+        targetEntry.collabStatus = 'In Discussion';
+      }
+      targetBrandName = targetEntry.brandName || targetBrandName;
+      targetProductName = targetEntry.productName || '';
+      targetDeliverables = targetEntry.deliverables || targetDeliverables;
+      targetCollabType = targetEntry.collabType || targetCollabType;
+      targetManagerName = targetEntry.managerName || targetManagerName;
+      targetTrackingId = targetEntry.trackingInfluencerId;
+
+      if (targetIdx === appItem.allotmentHistory.length - 1) {
+        appItem.status = newStatus;
+        appItem.opportunityRespondedAt = new Date();
+      }
+    } else {
+      appItem.status = newStatus;
+      appItem.opportunityRespondedAt = new Date();
     }
     await appItem.save();
 
-    console.log(`[Influencer Response] ${appItem.fullName} responded: ${newStatus} for brand '${appItem.allottedBrandName}'${appItem.allottedProductName ? ` (Product: ${appItem.allottedProductName})` : ''}`);
+    console.log(`[Influencer Response] ${appItem.fullName} responded: ${newStatus} for brand '${targetBrandName}'${targetProductName ? ` (Product: ${targetProductName})` : ''}`);
 
     // Sync status with active Influencer tracking record if present
     if (isAccept) {
       try {
-        const trackingFilter: any = {
-          $or: [
-            { influencerInstagramId: appItem.instagramHandle, brandName: appItem.allottedBrandName },
-            { phone: appItem.whatsappNumber, brandName: appItem.allottedBrandName }
-          ],
-          isDeleted: { $ne: true }
-        };
-        if (appItem.allottedProductName) {
-          trackingFilter.productName = appItem.allottedProductName;
-        }
+        const trackingFilter: any = targetTrackingId
+          ? { _id: targetTrackingId, isDeleted: { $ne: true } }
+          : {
+              $or: [
+                { influencerInstagramId: appItem.instagramHandle, brandName: targetBrandName },
+                { phone: appItem.whatsappNumber, brandName: targetBrandName }
+              ],
+              isDeleted: { $ne: true },
+              ...(targetProductName ? { productName: targetProductName } : {})
+            };
         await Influencer.updateMany(
           trackingFilter,
           {
             $set: {
-              status: 'In Progress',
-              deliverables: appItem.allottedDeliverables || undefined
+              status: 'In Discussion',
+              deliverables: targetDeliverables || undefined
             }
           }
         );
@@ -543,14 +721,14 @@ router.get('/respond', async (req: Request, res: Response) => {
       isAccept,
       title: isAccept ? 'Collaboration Confirmed! 🎉' : 'Opportunity Declined',
       message: isAccept
-        ? `Thank you, <strong>${appItem.fullName}</strong>! Your campaign slot for <strong>${appItem.allottedBrandName || 'the brand'}${appItem.allottedProductName ? ` (${appItem.allottedProductName})` : ''}</strong> is officially accepted and confirmed on our operations panel.`
+        ? `Thank you, <strong>${appItem.fullName}</strong>! Your campaign slot for <strong>${targetBrandName || 'the brand'}${targetProductName ? ` (${targetProductName})` : ''}</strong> is officially accepted and confirmed on our operations panel.`
         : `Thank you for letting us know, <strong>${appItem.fullName}</strong>. We have updated our campaign roster and our team will not contact you regarding this campaign.`,
-      brandName: appItem.allottedBrandName,
-      productName: appItem.allottedProductName,
+      brandName: targetBrandName,
+      productName: targetProductName,
       creatorName: appItem.fullName,
-      deliverables: appItem.allottedDeliverables,
-      collabType: appItem.allottedCollabType,
-      managerName: appItem.allottedManagerName,
+      deliverables: targetDeliverables,
+      collabType: targetCollabType,
+      managerName: targetManagerName,
       whatsappNumber: appItem.whatsappNumber
     }));
   } catch (error: any) {
@@ -569,11 +747,12 @@ router.get('/respond', async (req: Request, res: Response) => {
 // ============================================================================
 router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
   try {
-    const item = await InfluencerApplication.findById(req.params.id);
+    const item = await InfluencerApplication.findById(req.params.id).lean();
     if (!item || item.isDeleted) {
       return res.status(404).json({ success: false, message: 'Application not found' });
     }
-    return res.json({ success: true, item });
+    const [enriched] = await enrichApplicationAllotments([item]);
+    return res.json({ success: true, item: enriched });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: error.message || 'Server error' });
   }
@@ -687,8 +866,86 @@ ${nextStepText}
       }
     }
 
-    // Update application state
+    // Preserve any legacy single allotment into history before appending the new brand/product allotment
+    if (!Array.isArray(appItem.allotmentHistory)) {
+      appItem.allotmentHistory = [];
+    }
+    if (appItem.allotmentHistory.length === 0 && appItem.allottedBrandName) {
+      appItem.allotmentHistory.push({
+        brandId: appItem.allottedBrandId,
+        brandName: appItem.allottedBrandName,
+        requirementId: appItem.allottedRequirementId,
+        productName: appItem.allottedProductName || '',
+        productLink: appItem.allottedProductLink || '',
+        collabDescription: appItem.allottedCollabDescription || '',
+        collabType: appItem.allottedCollabType || 'Barter',
+        deliverables: appItem.allottedDeliverables || '',
+        commercialAmount: appItem.allottedCommercial || 0,
+        managerName: appItem.allottedManagerName || '',
+        managerNotes: appItem.managerNotes || '',
+        status: appItem.status || 'Brand Allotted',
+        collabStatus: 'Pending',
+        whatsappMessageText: appItem.whatsappMessageText || '',
+        respondedAt: appItem.opportunityRespondedAt,
+        allottedAt: appItem.allottedAt || appItem.createdAt
+      });
+    }
+
+    // Optionally create or sync in Ad2ship Influencers table first so we can link trackingInfluencerId
+    let syncedTrackingId: mongoose.Types.ObjectId | undefined = undefined;
+    if (addToActiveTracking) {
+      try {
+        const dedupeOr = [
+          { influencerInstagramId: appItem.instagramHandle, brandName: brandName.trim() },
+          { phone: appItem.whatsappNumber, brandName: brandName.trim() }
+        ];
+        let existingQuery: any = { $or: dedupeOr, isDeleted: { $ne: true } };
+        if (resolvedRequirement) {
+          existingQuery.brandRequirementId = resolvedRequirement._id;
+        } else if (finalProductName) {
+          existingQuery.productName = finalProductName;
+        } else {
+          existingQuery.$and = [{ $or: [{ productName: '' }, { productName: { $exists: false } }] }];
+        }
+
+        const existingRecord = await Influencer.findOne(existingQuery);
+
+        if (existingRecord) {
+          syncedTrackingId = existingRecord._id as mongoose.Types.ObjectId;
+        } else {
+          const newInfluencer = new Influencer({
+            brandName: brandName.trim(),
+            brandId: resolvedBrandId,
+            brandRequirementId: resolvedRequirement ? resolvedRequirement._id : undefined,
+            productName: finalProductName,
+            productLink: finalProductLink,
+            videoDescription: finalCollabDesc,
+            refVideoLink: finalRefVideoLink,
+            influencerName: appItem.fullName,
+            influencerInstagramId: appItem.instagramHandle,
+            phone: appItem.whatsappNumber,
+            profileLink: appItem.instagramUrl || `https://instagram.com/${appItem.instagramHandle.replace('@', '')}`,
+            category: collabType === 'Paid' ? 'Paid' : (collabType === 'Barter' ? 'Barter' : 'Paid'),
+            influencerManager: managerName,
+            status: collabType === 'Barter' ? 'Pending' : 'In Discussion',
+            influencerOnboardingAmt: cleanComm,
+            connectedDate: new Date(),
+            transactionDate: new Date(),
+            notes: `Auto-allotted from WhatsApp application form${finalProductName ? ` (Product: ${finalProductName})` : ''}. Deliverables: ${finalDeliverables}. Manager: ${managerName}`
+          });
+          await newInfluencer.save();
+          syncedTrackingId = newInfluencer._id as mongoose.Types.ObjectId;
+        }
+      } catch (syncErr) {
+        console.warn('Could not auto-sync to Influencer tracking table:', syncErr);
+      }
+    }
+
+    const newAllotmentId = new mongoose.Types.ObjectId();
+
+    // Update latest application state (keeps full compatibility with table/filters)
     appItem.status = 'Brand Allotted';
+    appItem.opportunityRespondedAt = undefined;
     appItem.allottedBrandId = resolvedBrandId;
     appItem.allottedBrandName = brandName.trim();
     appItem.allottedRequirementId = resolvedRequirement ? (resolvedRequirement._id as mongoose.Types.ObjectId) : undefined;
@@ -708,21 +965,23 @@ ${nextStepText}
     appItem.emailNotificationStatus = sendEmailNotification && appItem.email ? 'Pending' : undefined;
     appItem.emailSentAt = sendEmailNotification && appItem.email ? new Date() : undefined;
 
-    if (!Array.isArray(appItem.allotmentHistory)) {
-      appItem.allotmentHistory = [];
-    }
     appItem.allotmentHistory.push({
+      _id: newAllotmentId,
       brandId: resolvedBrandId,
       brandName: brandName.trim(),
       requirementId: resolvedRequirement ? (resolvedRequirement._id as mongoose.Types.ObjectId) : undefined,
       productName: finalProductName,
       productLink: finalProductLink,
+      collabDescription: finalCollabDesc,
       collabType,
       deliverables: finalDeliverables,
       commercialAmount: cleanComm,
       managerName,
       managerNotes: managerNotes ? managerNotes.trim() : '',
       status: 'Brand Allotted',
+      collabStatus: collabType === 'Barter' ? 'Pending' : 'In Discussion',
+      trackingInfluencerId: syncedTrackingId,
+      whatsappMessageText: whatsappMessage,
       allottedAt: new Date()
     });
 
@@ -762,8 +1021,8 @@ ${nextStepText}
     }
 
     detectedBaseUrl = detectedBaseUrl.replace(/\/$/, '');
-    const dynamicAcceptUrl = `${detectedBaseUrl}/api/v1/influencer-applications/respond?id=${appItem._id}&action=accept`;
-    const dynamicRejectUrl = `${detectedBaseUrl}/api/v1/influencer-applications/respond?id=${appItem._id}&action=reject`;
+    const dynamicAcceptUrl = `${detectedBaseUrl}/api/v1/influencer-applications/respond?id=${appItem._id}&allotmentId=${newAllotmentId.toString()}&action=accept`;
+    const dynamicRejectUrl = `${detectedBaseUrl}/api/v1/influencer-applications/respond?id=${appItem._id}&allotmentId=${newAllotmentId.toString()}&action=reject`;
 
     // Trigger Email Notification in background (non-blocking so API responds immediately)
     if (sendEmailNotification && appItem.email) {
@@ -800,47 +1059,6 @@ ${nextStepText}
       });
     }
 
-    // Optionally create or sync in Ad2ship Influencers table so it appears in daily tracking
-    if (addToActiveTracking) {
-      try {
-        const dedupeOr = [
-          { influencerInstagramId: appItem.instagramHandle, brandName: brandName.trim() },
-          { phone: appItem.whatsappNumber, brandName: brandName.trim() }
-        ];
-        const existingQuery: any = finalProductName
-          ? { $or: dedupeOr, productName: finalProductName, isDeleted: { $ne: true } }
-          : { $or: dedupeOr, isDeleted: { $ne: true } };
-
-        const existingRecord = await Influencer.findOne(existingQuery);
-
-        if (!existingRecord) {
-          const newInfluencer = new Influencer({
-            brandName: brandName.trim(),
-            brandId: resolvedBrandId,
-            brandRequirementId: resolvedRequirement ? resolvedRequirement._id : undefined,
-            productName: finalProductName,
-            productLink: finalProductLink,
-            videoDescription: finalCollabDesc,
-            refVideoLink: finalRefVideoLink,
-            influencerName: appItem.fullName,
-            influencerInstagramId: appItem.instagramHandle,
-            phone: appItem.whatsappNumber,
-            profileLink: appItem.instagramUrl || `https://instagram.com/${appItem.instagramHandle.replace('@', '')}`,
-            category: collabType === 'Paid' ? 'Paid' : (collabType === 'Barter' ? 'Barter' : 'Paid'),
-            influencerManager: managerName,
-            status: collabType === 'Barter' ? 'Pending' : 'In Discussion',
-            influencerOnboardingAmt: cleanComm,
-            connectedDate: new Date(),
-            transactionDate: new Date(),
-            notes: `Auto-allotted from WhatsApp application form${finalProductName ? ` (Product: ${finalProductName})` : ''}. Deliverables: ${finalDeliverables}. Manager: ${managerName}`
-          });
-          await newInfluencer.save();
-        }
-      } catch (syncErr) {
-        console.warn('Could not auto-sync to Influencer tracking table:', syncErr);
-      }
-    }
-
     // Audit log
     await logActivity({
       userId: req.user?._id,
@@ -854,10 +1072,12 @@ ${nextStepText}
       details: `Allotted brand '${brandName.trim()}'${finalProductName ? ` [Product: ${finalProductName}]` : ''} (${collabType}) to influencer ${appItem.fullName}. Deliverables: ${finalDeliverables}`
     });
 
+    const [enrichedApp] = await enrichApplicationAllotments([appItem.toObject()]);
+
     return res.json({
       success: true,
       message: `Brand '${brandName}'${finalProductName ? ` (${finalProductName})` : ''} allotted to ${appItem.fullName} successfully! Email dispatched and WhatsApp link generated.`,
-      application: appItem,
+      application: enrichedApp,
       whatsappMessage,
       whatsappShareUrl
     });
@@ -896,6 +1116,119 @@ router.patch('/:id/status', authenticateToken, async (req: AuthRequest, res: Res
       application: appItem
     });
   } catch (error: any) {
+    return res.status(500).json({ success: false, message: error.message || 'Server error' });
+  }
+});
+
+// ============================================================================
+// 5b. PROTECTED ROUTE: Update Specific Brand/Product Allotment Collab Status
+// PATCH /api/v1/influencer-applications/:id/allotments/:allotmentId/status
+// ============================================================================
+router.patch('/:id/allotments/:allotmentId/status', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const { id, allotmentId } = req.params;
+    const { collabStatus, status } = req.body;
+
+    const appItem = await InfluencerApplication.findById(id);
+    if (!appItem || appItem.isDeleted) {
+      return res.status(404).json({ success: false, message: 'Application not found' });
+    }
+
+    // Ensure legacy single allotment is materialized in history if needed
+    if ((!appItem.allotmentHistory || appItem.allotmentHistory.length === 0) && appItem.allottedBrandName) {
+      appItem.allotmentHistory = [{
+        brandId: appItem.allottedBrandId,
+        brandName: appItem.allottedBrandName,
+        requirementId: appItem.allottedRequirementId,
+        productName: appItem.allottedProductName || '',
+        productLink: appItem.allottedProductLink || '',
+        collabDescription: appItem.allottedCollabDescription || '',
+        collabType: appItem.allottedCollabType || 'Barter',
+        deliverables: appItem.allottedDeliverables || '',
+        commercialAmount: appItem.allottedCommercial || 0,
+        managerName: appItem.allottedManagerName || '',
+        managerNotes: appItem.managerNotes || '',
+        status: appItem.status || 'Brand Allotted',
+        collabStatus: 'Pending',
+        whatsappMessageText: appItem.whatsappMessageText || '',
+        respondedAt: appItem.opportunityRespondedAt,
+        allottedAt: appItem.allottedAt || appItem.createdAt
+      }];
+    }
+
+    let targetEntry: any = null;
+    if (allotmentId === 'legacy-0' && appItem.allotmentHistory && appItem.allotmentHistory.length > 0) {
+      targetEntry = appItem.allotmentHistory[0];
+    } else if (appItem.allotmentHistory) {
+      targetEntry = appItem.allotmentHistory.find((h: any) => String(h._id) === allotmentId);
+    }
+
+    if (!targetEntry) {
+      return res.status(404).json({ success: false, message: 'Allotment entry not found' });
+    }
+
+    const allowedCollabStatuses = ['Pending', 'In Discussion', 'Parcel Sent', 'Under Review', 'Completed', 'Settled', 'Approved', 'Product Returned'];
+    const allowedInviteStatuses = ['Brand Allotted', 'Opportunity Accepted', 'Opportunity Declined'];
+
+    if (collabStatus && allowedCollabStatuses.includes(collabStatus)) {
+      targetEntry.collabStatus = collabStatus;
+      if (collabStatus === 'Parcel Sent') {
+        targetEntry.parcelSentAt = targetEntry.parcelSentAt || new Date();
+      } else if (collabStatus === 'Pending' || collabStatus === 'In Discussion') {
+        targetEntry.parcelSentAt = undefined;
+      }
+      if (COMPLETED_STATUSES.has(collabStatus)) {
+        targetEntry.completedAt = targetEntry.completedAt || new Date();
+      }
+    }
+
+    if (status && allowedInviteStatuses.includes(status)) {
+      targetEntry.status = status;
+      targetEntry.respondedAt = new Date();
+      const lastEntry = appItem.allotmentHistory![appItem.allotmentHistory!.length - 1];
+      if (String(lastEntry._id) === String(targetEntry._id)) {
+        appItem.status = status;
+        appItem.opportunityRespondedAt = new Date();
+      }
+    }
+
+    await appItem.save();
+
+    // Sync execution collabStatus back to linked Influencer tracking record if found
+    if (collabStatus && allowedCollabStatuses.includes(collabStatus)) {
+      try {
+        const trackingFilter: any = targetEntry.trackingInfluencerId
+          ? { _id: targetEntry.trackingInfluencerId, isDeleted: { $ne: true } }
+          : {
+              $or: [
+                { influencerInstagramId: appItem.instagramHandle, brandName: targetEntry.brandName },
+                { phone: appItem.whatsappNumber, brandName: targetEntry.brandName }
+              ],
+              isDeleted: { $ne: true },
+              ...(targetEntry.productName ? { productName: targetEntry.productName } : {})
+            };
+
+        const updateFields: any = { status: collabStatus, statusUpdatedAt: new Date() };
+        if (collabStatus === 'Parcel Sent' && targetEntry.parcelSentAt) {
+          updateFields.parcelSentAt = targetEntry.parcelSentAt;
+        }
+        if (COMPLETED_STATUSES.has(collabStatus)) {
+          updateFields.completedAt = new Date();
+        }
+        await Influencer.updateMany(trackingFilter, { $set: updateFields });
+      } catch (syncErr) {
+        console.warn('Could not sync allotment status to Influencer tracking record:', syncErr);
+      }
+    }
+
+    const [enriched] = await enrichApplicationAllotments([appItem.toObject()]);
+    return res.json({
+      success: true,
+      message: 'Allotment status updated',
+      application: enriched
+    });
+  } catch (error: any) {
+    console.error('Error updating allotment status:', error);
     return res.status(500).json({ success: false, message: error.message || 'Server error' });
   }
 });

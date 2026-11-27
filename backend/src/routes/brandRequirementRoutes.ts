@@ -250,18 +250,32 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         }
       ]),
       InfluencerApplication.aggregate([
+        { $match: { isDeleted: { $ne: true } } },
         {
-          $match: {
-            isDeleted: { $ne: true },
-            allottedRequirementId: { $exists: true, $ne: null }
+          $project: {
+            entries: {
+              $cond: [
+                { $gt: [{ $size: { $ifNull: ['$allotmentHistory', []] } }, 0] },
+                '$allotmentHistory',
+                {
+                  $cond: [
+                    { $ne: ['$allottedRequirementId', null] },
+                    [{ requirementId: '$allottedRequirementId', status: '$status' }],
+                    []
+                  ]
+                }
+              ]
+            }
           }
         },
+        { $unwind: '$entries' },
+        { $match: { 'entries.requirementId': { $exists: true, $ne: null } } },
         {
           $group: {
-            _id: '$allottedRequirementId',
+            _id: '$entries.requirementId',
             allottedCount: { $sum: 1 },
             acceptedCount: {
-              $sum: { $cond: [{ $eq: ['$status', 'Opportunity Accepted'] }, 1, 0] }
+              $sum: { $cond: [{ $eq: ['$entries.status', 'Opportunity Accepted'] }, 1, 0] }
             }
           }
         }
@@ -324,16 +338,37 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
       return res.status(404).json({ success: false, message: 'Product requirement not found' });
     }
 
-    const allottedCreators = await InfluencerApplication.find({
+    const rawApps = await InfluencerApplication.find({
       isDeleted: { $ne: true },
       $or: [
         { allottedRequirementId: item._id },
         { 'allotmentHistory.requirementId': item._id }
       ]
     })
-      .select('fullName instagramHandle whatsappNumber email city followersCountBracket status allottedCollabType allottedDeliverables allottedCommercial allottedAt')
+      .select('fullName instagramHandle whatsappNumber email city followersCountBracket status allottedCollabType allottedDeliverables allottedCommercial allottedAt allotmentHistory')
       .sort({ allottedAt: -1 })
       .lean();
+
+    const allottedCreators = rawApps.map((app: any) => {
+      const histMatch = Array.isArray(app.allotmentHistory)
+        ? [...app.allotmentHistory].reverse().find((h: any) => String(h.requirementId) === String(item._id))
+        : null;
+      return {
+        _id: app._id,
+        fullName: app.fullName,
+        instagramHandle: app.instagramHandle,
+        whatsappNumber: app.whatsappNumber,
+        email: app.email,
+        city: app.city,
+        followersCountBracket: app.followersCountBracket,
+        status: histMatch?.status || app.status,
+        collabStatus: histMatch?.collabStatus || 'Pending',
+        allottedCollabType: histMatch?.collabType || app.allottedCollabType,
+        allottedDeliverables: histMatch?.deliverables || app.allottedDeliverables,
+        allottedCommercial: histMatch?.commercialAmount ?? app.allottedCommercial,
+        allottedAt: histMatch?.allottedAt || app.allottedAt
+      };
+    });
 
     return res.json({
       success: true,

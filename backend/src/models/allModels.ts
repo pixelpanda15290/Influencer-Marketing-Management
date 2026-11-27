@@ -783,17 +783,25 @@ export interface IInfluencerApplication extends Document {
   allottedManagerName?: string;
   allottedAt?: Date;
   allotmentHistory?: Array<{
+    _id?: mongoose.Types.ObjectId;
     brandId?: mongoose.Types.ObjectId;
     brandName: string;
     requirementId?: mongoose.Types.ObjectId;
     productName?: string;
     productLink?: string;
+    collabDescription?: string;
     collabType: 'Barter' | 'Paid' | 'Both';
     deliverables?: string;
     commercialAmount?: number;
     managerName?: string;
     managerNotes?: string;
     status?: string;
+    collabStatus?: string;
+    trackingInfluencerId?: mongoose.Types.ObjectId;
+    whatsappMessageText?: string;
+    parcelSentAt?: Date;
+    respondedAt?: Date;
+    completedAt?: Date;
     allottedAt: Date;
   }>;
 
@@ -865,12 +873,19 @@ export const InfluencerApplicationSchema = new Schema<IInfluencerApplication>({
     requirementId: { type: Schema.Types.ObjectId, ref: 'BrandRequirement' },
     productName: { type: String, default: '' },
     productLink: { type: String, default: '' },
+    collabDescription: { type: String, default: '' },
     collabType: { type: String, enum: ['Barter', 'Paid', 'Both'] },
     deliverables: { type: String, default: '' },
     commercialAmount: { type: Number, default: 0 },
     managerName: { type: String, default: '' },
     managerNotes: { type: String, default: '' },
     status: { type: String, default: 'Brand Allotted' },
+    collabStatus: { type: String, default: 'Pending' },
+    trackingInfluencerId: { type: Schema.Types.ObjectId, ref: 'Influencer' },
+    whatsappMessageText: { type: String, default: '' },
+    parcelSentAt: { type: Date },
+    respondedAt: { type: Date },
+    completedAt: { type: Date },
     allottedAt: { type: Date, default: Date.now }
   }],
 

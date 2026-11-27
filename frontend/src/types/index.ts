@@ -523,6 +523,41 @@ export interface BrandRequirement {
   updatedAt: string;
 }
 
+export interface AllotmentHistoryItem {
+  _id?: string;
+  brandId?: string;
+  brandName: string;
+  requirementId?: string;
+  productName?: string;
+  productLink?: string;
+  collabDescription?: string;
+  collabType: 'Barter' | 'Paid' | 'Both';
+  deliverables?: string;
+  commercialAmount?: number;
+  managerName?: string;
+  managerNotes?: string;
+  status?: string;
+  collabStatus?: string;
+  trackingInfluencerId?: string;
+  whatsappMessageText?: string;
+  parcelSentAt?: string;
+  respondedAt?: string;
+  completedAt?: string;
+  allottedAt: string;
+  // Live enriched tracking fields from backend
+  executionStatus?: string;
+  daysPending?: number;
+  isLongPending?: boolean;
+  isCompleted?: boolean;
+  isParcelTimerActive?: boolean;
+  parcelDaysElapsed?: number;
+  parcelDaysLeft?: number;
+  isParcelOverdue?: boolean;
+  contentLink?: string;
+  viewsCount?: number;
+  ordersGenerated?: number;
+}
+
 export interface InfluencerApplication {
   _id: string;
   fullName: string;
@@ -564,20 +599,12 @@ export interface InfluencerApplication {
   allottedManagerId?: string;
   allottedManagerName?: string;
   allottedAt?: string;
-  allotmentHistory?: Array<{
-    brandId?: string;
-    brandName: string;
-    requirementId?: string;
-    productName?: string;
-    productLink?: string;
-    collabType: 'Barter' | 'Paid' | 'Both';
-    deliverables?: string;
-    commercialAmount?: number;
-    managerName?: string;
-    managerNotes?: string;
-    status?: string;
-    allottedAt: string;
-  }>;
+  allotmentHistory?: AllotmentHistoryItem[];
+  // Live multi-brand collaboration summary
+  totalAllotments?: number;
+  completedCollabsCount?: number;
+  longPendingCollabsCount?: number;
+  activeCollabsCount?: number;
   emailNotificationStatus?: 'Pending' | 'Sent' | 'Failed';
   emailSentAt?: string;
   whatsappMessageText?: string;

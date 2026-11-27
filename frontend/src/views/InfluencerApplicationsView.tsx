@@ -3,10 +3,10 @@ import {
   Sparkles, Search, Filter, Phone, Mail, Instagram, CheckCircle2, 
   Clock, XCircle, ChevronRight, Copy, Check, ExternalLink, MessageCircle,
   Building2, DollarSign, Package, UserCheck, AlertCircle, Loader2,
-  RefreshCw, MapPin, Eye, FileText, Send, ArrowUpRight, User, Tag, Gift, Layers, Plus, IndianRupee, ChevronDown, Link2, X
+  RefreshCw, MapPin, Eye, FileText, Send, ArrowUpRight, User, Tag, Gift, Layers, Plus, IndianRupee, ChevronDown, Link2, X, AlertTriangle
 } from 'lucide-react';
 import { api } from '../services/api';
-import { InfluencerApplication, Brand, BrandRequirement } from '../types';
+import { InfluencerApplication, AllotmentHistoryItem, Brand, BrandRequirement } from '../types';
 import { Modal } from '../components/Modal';
 import { Pagination } from '../components/Pagination';
 
@@ -486,13 +486,64 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
     setAllotForm(prev => ({ ...prev, deliverables: items.join(' + ') }));
   };
 
+  const [updatingAllotmentId, setUpdatingAllotmentId] = useState<string | null>(null);
+
+  const getAllotmentsForApp = (app: InfluencerApplication): AllotmentHistoryItem[] => {
+    if (Array.isArray(app.allotmentHistory) && app.allotmentHistory.length > 0) {
+      return app.allotmentHistory;
+    }
+    if (app.allottedBrandName) {
+      return [{
+        _id: 'legacy-0',
+        brandId: app.allottedBrandId,
+        brandName: app.allottedBrandName,
+        requirementId: app.allottedRequirementId,
+        productName: app.allottedProductName,
+        productLink: app.allottedProductLink,
+        collabDescription: app.allottedCollabDescription,
+        collabType: app.allottedCollabType || 'Barter',
+        deliverables: app.allottedDeliverables,
+        commercialAmount: app.allottedCommercial,
+        managerName: app.allottedManagerName,
+        managerNotes: app.managerNotes,
+        status: app.status,
+        collabStatus: 'Pending',
+        executionStatus: 'Pending',
+        whatsappMessageText: app.whatsappMessageText,
+        respondedAt: app.opportunityRespondedAt,
+        allottedAt: app.allottedAt || app.createdAt
+      }];
+    }
+    return [];
+  };
+
+  const handleUpdateAllotmentStatus = async (
+    appId: string,
+    allotmentId: string,
+    payload: { collabStatus?: string; status?: string }
+  ) => {
+    setUpdatingAllotmentId(allotmentId);
+    try {
+      const res = await api.patch(`/influencer-applications/${appId}/allotments/${allotmentId}/status`, payload);
+      if (res.success && res.application) {
+        setSelectedApp(res.application);
+        setApplications(prev => prev.map(a => (a._id === appId ? res.application : a)));
+      }
+    } catch (err: any) {
+      alert(err.message || 'Failed to update collaboration status.');
+    } finally {
+      setUpdatingAllotmentId(null);
+    }
+  };
+
   // WhatsApp wa.me generator helper
-  const getWhatsAppDirectUrl = (appItem: InfluencerApplication) => {
+  const getWhatsAppDirectUrl = (appItem: InfluencerApplication, customMsg?: string) => {
     const rawDigits = (appItem.whatsappNumber || '').replace(/\D/g, '');
     const cleanPhone = rawDigits.length === 10 ? `91${rawDigits}` : rawDigits;
     
-    if (appItem.whatsappMessageText) {
-      return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(appItem.whatsappMessageText)}`;
+    const msg = customMsg || appItem.whatsappMessageText;
+    if (msg) {
+      return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(msg)}`;
     }
 
     const defaultMsg = `Hi ${appItem.fullName}! Greetings from Ad2ship Influencer Operations. We received your creator application!`;
@@ -935,58 +986,113 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
 
                       {/* Status & Allotted Brand */}
                       <td className="py-3.5 px-4">
-                        {isAccepted ? (
-                          <div className="space-y-1">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black uppercase shadow-2xs">
-                              <CheckCircle2 size={11} className="text-emerald-700" /> Accepted by Creator 🎉
-                            </span>
-                            <div className="font-extrabold text-purple-900 text-xs flex items-center gap-1 mt-0.5">
-                              <Building2 size={12} className="text-purple-600" />
-                              <span>{item.allottedBrandName}</span>
+                        {(() => {
+                          const allotments = getAllotmentsForApp(item);
+                          const extraBrandsCount = Math.max(0, allotments.length - 1);
+                          const completedCount = item.completedCollabsCount ?? allotments.filter(a => a.isCompleted).length;
+                          const longPendingCount = item.longPendingCollabsCount ?? allotments.filter(a => a.isLongPending).length;
+
+                          return (
+                            <div className="space-y-1">
+                              {isAccepted ? (
+                                <>
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black uppercase shadow-2xs">
+                                    <CheckCircle2 size={11} className="text-emerald-700" /> Accepted by Creator 🎉
+                                  </span>
+                                  <div className="font-extrabold text-purple-900 text-xs flex items-center gap-1 mt-0.5">
+                                    <Building2 size={12} className="text-purple-600" />
+                                    <span>{item.allottedBrandName}</span>
+                                  </div>
+                                  {item.allottedProductName && (
+                                    <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200/70 text-[10px] font-bold">
+                                      <Package size={10} className="text-indigo-600 shrink-0" />
+                                      <span className="truncate max-w-[160px]">{item.allottedProductName}</span>
+                                    </div>
+                                  )}
+                                </>
+                              ) : isDeclined ? (
+                                <>
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-black uppercase">
+                                    <XCircle size={11} className="text-rose-600" /> Declined by Creator
+                                  </span>
+                                  {item.allottedBrandName && (
+                                    <div className="text-[11px] text-slate-400 font-medium line-through">
+                                      {item.allottedBrandName}{item.allottedProductName ? ` (${item.allottedProductName})` : ''}
+                                    </div>
+                                  )}
+                                </>
+                              ) : isAllotted ? (
+                                <>
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-800 border border-purple-200 text-[10px] font-black uppercase">
+                                    <CheckCircle2 size={11} className="text-purple-600" /> Brand Allotted
+                                  </span>
+                                  <div className="font-extrabold text-purple-900 text-xs flex items-center gap-1 mt-0.5">
+                                    <Building2 size={12} className="text-purple-600" />
+                                    <span>{item.allottedBrandName}</span>
+                                  </div>
+                                  {item.allottedProductName && (
+                                    <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200/70 text-[10px] font-bold">
+                                      <Package size={10} className="text-indigo-600 shrink-0" />
+                                      <span className="truncate max-w-[160px]">{item.allottedProductName}</span>
+                                    </div>
+                                  )}
+                                </>
+                              ) : isPending ? (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200/80 text-[11px] font-black uppercase shadow-2xs">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" /> Pending Review
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-black uppercase">
+                                  <XCircle size={11} /> {item.status}
+                                </span>
+                              )}
+
+                              {(extraBrandsCount > 0 || completedCount > 0 || longPendingCount > 0 || allotments.some(a => a.isParcelTimerActive)) && (
+                                <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                                  {extraBrandsCount > 0 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setSelectedApp(item);
+                                        setShowDetailsModal(true);
+                                      }}
+                                      className="px-2 py-0.5 rounded-md bg-slate-100 hover:bg-purple-100 text-slate-700 hover:text-purple-800 border border-slate-200 text-[10px] font-extrabold cursor-pointer transition"
+                                      title="View all brands & products allotted to this influencer"
+                                    >
+                                      +{extraBrandsCount} more brand{extraBrandsCount > 1 ? 's' : ''}
+                                    </button>
+                                  )}
+                                  {(() => {
+                                    const activeParcel = allotments.find(a => a.isParcelTimerActive);
+                                    if (!activeParcel) return null;
+                                    if (activeParcel.isParcelOverdue) {
+                                      return (
+                                        <span className="px-1.5 py-0.5 rounded-md bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black">
+                                          ⚠ 14d Overdue
+                                        </span>
+                                      );
+                                    }
+                                    return (
+                                      <span className="px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-bold">
+                                        📦 {activeParcel.parcelDaysLeft ?? 14}d left
+                                      </span>
+                                    );
+                                  })()}
+                                  {completedCount > 0 && (
+                                    <span className="px-1.5 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
+                                      ✓ {completedCount} Completed
+                                    </span>
+                                  )}
+                                  {longPendingCount > 0 && (
+                                    <span className="px-1.5 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-bold">
+                                      ⚠ {longPendingCount} Pending 7d+
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
-                            {item.allottedProductName && (
-                              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200/70 text-[10px] font-bold">
-                                <Package size={10} className="text-indigo-600 shrink-0" />
-                                <span className="truncate max-w-[160px]">{item.allottedProductName}</span>
-                              </div>
-                            )}
-                          </div>
-                        ) : isDeclined ? (
-                          <div className="space-y-1">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-black uppercase">
-                              <XCircle size={11} className="text-rose-600" /> Declined by Creator
-                            </span>
-                            {item.allottedBrandName && (
-                              <div className="text-[11px] text-slate-400 font-medium line-through">
-                                {item.allottedBrandName}{item.allottedProductName ? ` (${item.allottedProductName})` : ''}
-                              </div>
-                            )}
-                          </div>
-                        ) : isAllotted ? (
-                          <div className="space-y-1">
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-50 text-purple-800 border border-purple-200 text-[10px] font-black uppercase">
-                              <CheckCircle2 size={11} className="text-purple-600" /> Brand Allotted
-                            </span>
-                            <div className="font-extrabold text-purple-900 text-xs flex items-center gap-1 mt-0.5">
-                              <Building2 size={12} className="text-purple-600" />
-                              <span>{item.allottedBrandName}</span>
-                            </div>
-                            {item.allottedProductName && (
-                              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200/70 text-[10px] font-bold">
-                                <Package size={10} className="text-indigo-600 shrink-0" />
-                                <span className="truncate max-w-[160px]">{item.allottedProductName}</span>
-                              </div>
-                            )}
-                          </div>
-                        ) : isPending ? (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200/80 text-[11px] font-black uppercase shadow-2xs">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" /> Pending Review
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-200 text-[10px] font-black uppercase">
-                            <XCircle size={11} /> {item.status}
-                          </span>
-                        )}
+                          );
+                        })()}
                       </td>
 
                       {/* Actions */}
@@ -996,10 +1102,10 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                           <button
                             onClick={() => handleOpenAllotModal(item)}
                             className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
-                            title="Allot to this Influencer"
+                            title={getAllotmentsForApp(item).length > 0 ? 'Allot another brand or product to this influencer' : 'Allot to this Influencer'}
                           >
                             <Building2 size={13} />
-                            <span>{isAllotted ? 'Re-allot' : 'Allot'}</span>
+                            <span>{getAllotmentsForApp(item).length > 0 ? 'Re-allot' : 'Allot'}</span>
                           </button>
 
                           {/* Direct WhatsApp Message Link */}
@@ -1165,6 +1271,77 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                   </div>
                 </div>
               </div>
+
+              {/* Existing Brand & Product Allotments History (when re-allotting to another brand/product) */}
+              {(() => {
+                const existingAllotments = getAllotmentsForApp(selectedApp);
+                if (existingAllotments.length === 0) return null;
+
+                const selectedBrandLower = (isCustomBrand ? customBrandName : allotForm.brandName).trim().toLowerCase();
+                const selectedProdLower = allotForm.productName.trim().toLowerCase();
+                const duplicateActive = existingAllotments.find(a => {
+                  const sameBrand = (a.brandName || '').trim().toLowerCase() === selectedBrandLower;
+                  const sameProd = selectedProdLower
+                    ? (a.productName || '').trim().toLowerCase() === selectedProdLower
+                    : !(a.productName || '').trim();
+                  return sameBrand && sameProd && !a.isCompleted && a.status !== 'Opportunity Declined';
+                });
+
+                return (
+                  <div className="p-3 bg-slate-50 border border-slate-200/90 rounded-2xl space-y-2">
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="text-[11px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                        <Layers size={13} className="text-purple-600" />
+                        Existing Allotments &amp; Collab Track Record ({existingAllotments.length})
+                      </span>
+                      <span className="text-[10px] font-semibold text-slate-500">
+                        You can allot this creator to another brand or product below
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+                      {[...existingAllotments].reverse().map((a, idx) => (
+                        <div
+                          key={a._id || idx}
+                          className={`px-2.5 py-1.5 rounded-xl border text-[11px] flex items-center gap-1.5 ${
+                            a.isCompleted
+                              ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                              : a.isLongPending
+                              ? 'bg-amber-50 border-amber-300 text-amber-900'
+                              : a.status === 'Opportunity Declined'
+                              ? 'bg-rose-50 border-rose-200 text-rose-800'
+                              : 'bg-white border-slate-200 text-slate-800'
+                          }`}
+                        >
+                          <span className="font-black">{a.brandName}</span>
+                          {a.productName && <span className="text-indigo-700 font-semibold">• {a.productName}</span>}
+                          <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-white/80 border border-black/10">
+                            {a.isCompleted
+                              ? `✓ ${a.executionStatus || 'Completed'}`
+                              : a.status === 'Opportunity Declined'
+                              ? 'Declined'
+                              : a.isParcelTimerActive
+                              ? (a.isParcelOverdue
+                                ? `⚠ 14d Timer Expired (+${(a.parcelDaysElapsed || 14) - 14}d)`
+                                : `📦 ${a.parcelDaysLeft ?? 14}d left (Day ${(a.parcelDaysElapsed || 0) + 1}/14)`)
+                              : a.isLongPending
+                              ? `⚠ Pending ${a.daysPending}d (Long Pending)`
+                              : `${a.executionStatus || 'Pending'}${typeof a.daysPending === 'number' && a.daysPending > 0 ? ` (${a.daysPending}d)` : ''}`}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    {duplicateActive && (
+                      <div className="p-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-semibold flex items-center gap-1.5">
+                        <AlertTriangle size={13} className="text-amber-600 shrink-0" />
+                        <span>
+                          Already allotted to <strong>{duplicateActive.brandName}</strong>
+                          {duplicateActive.productName ? ` (${duplicateActive.productName})` : ''}. Pick another brand or product above if you want a separate collab.
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* 2-Column Executive Row: Brand Selector & Collaboration Mode */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-start">
@@ -2115,75 +2292,191 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
               </div>
             </div>
 
-            {/* Section 5: Allotted Brand Information (if allotted / responded) */}
-            {(selectedApp.status === 'Brand Allotted' || selectedApp.status === 'Opportunity Accepted' || selectedApp.status === 'Opportunity Declined') && (
-              <div className={`p-4 rounded-2xl space-y-2.5 border ${selectedApp.status === 'Opportunity Accepted' ? 'bg-emerald-50/70 border-emerald-300' : (selectedApp.status === 'Opportunity Declined' ? 'bg-rose-50/70 border-rose-200' : 'bg-purple-50/60 border-purple-200')}`}>
-                <div className="text-[11px] font-extrabold uppercase tracking-wider flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <CheckCircle2 size={13} className={selectedApp.status === 'Opportunity Declined' ? 'text-rose-600' : 'text-emerald-600'} />
-                    <span className={selectedApp.status === 'Opportunity Declined' ? 'text-rose-950' : 'text-emerald-950'}>Campaign Allotment Details</span>
-                  </div>
-                  {selectedApp.opportunityRespondedAt && (
-                    <span className="text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-white border border-emerald-300 text-emerald-800 shadow-2xs">
-                      Responded: {new Date(selectedApp.opportunityRespondedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
-                    </span>
-                  )}
-                </div>
-                <div className="bg-white p-3 rounded-xl border border-emerald-100 space-y-2 text-xs">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <span className="text-slate-400 font-bold block text-[10px] uppercase">Allotted Brand</span>
-                      <div className="font-black text-purple-900 text-sm flex items-center gap-1 mt-0.5">
-                        <Building2 size={13} className="text-purple-600" />
-                        <span>{selectedApp.allottedBrandName}</span>
-                        <span className="text-xs font-normal text-slate-500">({selectedApp.allottedCollabType})</span>
-                      </div>
-                      {selectedApp.allottedProductName && (
-                        <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 text-[11px] font-bold">
-                          <Package size={11} className="text-indigo-600" />
-                          <span>{selectedApp.allottedProductName}</span>
-                          {selectedApp.allottedProductLink && (
-                            <a href={selectedApp.allottedProductLink} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline ml-1">
-                              Link
-                            </a>
-                          )}
-                        </div>
+            {/* Section 5: All Brand & Product Allotments + Collab Execution History */}
+            {(() => {
+              const allotments = getAllotmentsForApp(selectedApp);
+              if (allotments.length === 0) return null;
+              const ordered = [...allotments].reverse();
+
+              return (
+                <div className="p-4 rounded-2xl space-y-3 border bg-purple-50/40 border-purple-200/80">
+                  <div className="text-[11px] font-extrabold uppercase tracking-wider flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-1.5 text-purple-950">
+                      <Layers size={14} className="text-purple-600" />
+                      <span>Brand &amp; Product Allotments &amp; Collab History ({allotments.length})</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      {(selectedApp.completedCollabsCount || 0) > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">
+                          ✓ {selectedApp.completedCollabsCount} Completed
+                        </span>
+                      )}
+                      {(selectedApp.longPendingCollabsCount || 0) > 0 && (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black">
+                          ⚠ {selectedApp.longPendingCollabsCount} Long Pending (7d+)
+                        </span>
                       )}
                     </div>
-                    <div>
-                      <span className="text-slate-400 font-bold block text-[10px] uppercase">Deliverables</span>
-                      <div className="font-bold text-slate-800 mt-0.5">{selectedApp.allottedDeliverables}</div>
-                    </div>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-100">
-                    <div>
-                      <span className="text-slate-400 font-bold block text-[10px] uppercase">Campaign Manager</span>
-                      <div className="font-bold text-slate-700">{selectedApp.allottedManagerName || 'Operations Team'}</div>
-                    </div>
-                    {selectedApp.allottedCommercial ? (
-                      <div>
-                        <span className="text-slate-400 font-bold block text-[10px] uppercase">Commercial Agreed</span>
-                        <div className="font-black text-emerald-600">₹{selectedApp.allottedCommercial.toLocaleString('en-IN')}</div>
-                      </div>
-                    ) : null}
+                  <div className="space-y-2.5 max-h-96 overflow-y-auto pr-0.5">
+                    {ordered.map((entry, idx) => {
+                      const entryId = String(entry._id || `idx-${idx}`);
+                      const execStatus = entry.executionStatus || entry.collabStatus || 'Pending';
+                      const isCompleted = Boolean(entry.isCompleted);
+                      const isDeclined = entry.status === 'Opportunity Declined';
+                      const isLongPending = Boolean(entry.isLongPending);
+
+                      return (
+                        <div
+                          key={entryId}
+                          className={`bg-white p-3.5 rounded-xl border space-y-2 text-xs shadow-2xs ${
+                            isCompleted
+                              ? 'border-emerald-200'
+                              : isLongPending
+                              ? 'border-amber-300'
+                              : isDeclined
+                              ? 'border-rose-200'
+                              : 'border-slate-200'
+                          }`}
+                        >
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                            <div>
+                              <div className="font-black text-purple-950 text-sm flex items-center gap-1.5 flex-wrap">
+                                <Building2 size={13} className="text-purple-600 shrink-0" />
+                                <span>{entry.brandName}</span>
+                                <span className="text-[11px] font-bold text-slate-500">({entry.collabType})</span>
+                                {idx === 0 && (
+                                  <span className="px-1.5 py-0.2 rounded bg-purple-100 text-purple-800 text-[9px] font-black uppercase">
+                                    Latest
+                                  </span>
+                                )}
+                              </div>
+                              {entry.productName && (
+                                <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 text-[11px] font-bold">
+                                  <Package size={11} className="text-indigo-600" />
+                                  <span>{entry.productName}</span>
+                                  {entry.productLink && (
+                                    <a href={entry.productLink} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline ml-1">
+                                      Link
+                                    </a>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase ${
+                                entry.status === 'Opportunity Accepted'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : isDeclined
+                                  ? 'bg-rose-100 text-rose-800'
+                                  : 'bg-purple-100 text-purple-800'
+                              }`}>
+                                {entry.status === 'Opportunity Accepted'
+                                  ? 'Accepted'
+                                  : isDeclined
+                                  ? 'Declined'
+                                  : 'Awaiting Reply'}
+                              </span>
+
+                              {isCompleted ? (
+                                <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-black">
+                                  ✓ Completed
+                                </span>
+                              ) : entry.isParcelTimerActive ? (
+                                entry.isParcelOverdue ? (
+                                  <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300 text-[10px] font-black flex items-center gap-1">
+                                    <AlertTriangle size={10} /> 14d Timer Expired (+{(entry.parcelDaysElapsed || 14) - 14}d overdue)
+                                  </span>
+                                ) : (
+                                  <span className={`px-2 py-0.5 rounded-full border text-[10px] font-black flex items-center gap-1 ${
+                                    (entry.parcelDaysLeft ?? 14) <= 3
+                                      ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                      : 'bg-indigo-50 text-indigo-800 border-indigo-200'
+                                  }`}>
+                                    <Clock size={10} /> 📦 {entry.parcelDaysLeft ?? 14}d left (Day {(entry.parcelDaysElapsed || 0) + 1}/14)
+                                  </span>
+                                )
+                              ) : isLongPending ? (
+                                <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black flex items-center gap-1">
+                                  <AlertTriangle size={10} /> Pending {entry.daysPending}d (Long Pending)
+                                </span>
+                              ) : !isDeclined ? (
+                                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-bold">
+                                  Pending {entry.daysPending || 0}d
+                                </span>
+                              ) : null}
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-100 items-center">
+                            <div>
+                              <span className="text-slate-400 font-bold block text-[10px] uppercase">Deliverables</span>
+                              <span className="font-semibold text-slate-800">{entry.deliverables || '—'}</span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 font-bold block text-[10px] uppercase">Manager &amp; Commercial</span>
+                              <span className="font-semibold text-slate-700">
+                                {entry.managerName || 'Operations'}
+                                {entry.commercialAmount ? ` • ₹${entry.commercialAmount.toLocaleString('en-IN')}` : ''}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-slate-400 font-bold block text-[10px] uppercase mb-0.5">Collab Progress Status</span>
+                              <select
+                                value={execStatus}
+                                disabled={updatingAllotmentId === entryId}
+                                onChange={e => handleUpdateAllotmentStatus(selectedApp._id, entryId, { collabStatus: e.target.value })}
+                                className={`w-full px-2 py-1 rounded-lg border text-[11px] font-black cursor-pointer focus:outline-none ${
+                                  isCompleted
+                                    ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    : isLongPending
+                                    ? 'bg-amber-50 text-amber-900 border-amber-300'
+                                    : 'bg-slate-50 text-slate-800 border-slate-200'
+                                }`}
+                              >
+                                <option value="Pending">Pending</option>
+                                <option value="In Discussion">In Discussion</option>
+                                <option value="Parcel Sent">Parcel Sent</option>
+                                <option value="Under Review">Under Review</option>
+                                <option value="Completed">Completed</option>
+                                <option value="Settled">Settled</option>
+                                <option value="Approved">Approved</option>
+                                <option value="Product Returned">Product Returned</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2 pt-1.5 border-t border-slate-100 text-[10px] text-slate-400 flex-wrap">
+                            <span>
+                              Allotted: {entry.allottedAt ? new Date(entry.allottedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                              {entry.parcelSentAt ? ` • Parcel Sent: ${new Date(entry.parcelSentAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : ''}
+                              {entry.respondedAt ? ` • Replied: ${new Date(entry.respondedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}` : ''}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              {entry.contentLink && (
+                                <a href={entry.contentLink} target="_blank" rel="noopener noreferrer" className="text-purple-700 font-bold hover:underline inline-flex items-center gap-0.5">
+                                  <ExternalLink size={10} /> View Reel/Post
+                                </a>
+                              )}
+                              <a
+                                href={getWhatsAppDirectUrl(selectedApp, entry.whatsappMessageText)}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2 py-0.5 rounded bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold inline-flex items-center gap-1"
+                              >
+                                <MessageCircle size={10} /> WhatsApp
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-
-                  {selectedApp.managerNotes && (
-                    <div className="pt-1.5 border-t border-slate-100">
-                      <span className="text-slate-400 font-bold block text-[10px] uppercase">Manager Guidelines / Notes</span>
-                      <div className="text-slate-700 italic mt-0.5">{selectedApp.managerNotes}</div>
-                    </div>
-                  )}
-
-                  {selectedApp.allottedAt && (
-                    <div className="text-[10px] text-slate-400 pt-1 border-t border-slate-100">
-                      Allotted on: {new Date(selectedApp.allottedAt).toLocaleString('en-IN')}
-                    </div>
-                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Modal Actions */}
             <div className="flex gap-2.5 pt-2">
@@ -2194,7 +2487,7 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                 }}
                 className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md shadow-purple-500/20 transition cursor-pointer"
               >
-                <Building2 size={15} /> Allot
+                <Building2 size={15} /> {getAllotmentsForApp(selectedApp).length > 0 ? 'Allot Another Brand / Product' : 'Allot'}
               </button>
               <a
                 href={getWhatsAppDirectUrl(selectedApp)}
