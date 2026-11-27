@@ -7,16 +7,17 @@ import {
   UserPlus
 } from 'lucide-react';
 import { api } from '../services/api';
-import { InfluencerDirectoryItem } from '../types';
+import { InfluencerDirectoryItem, BrandRequirement } from '../types';
 import { Modal } from '../components/Modal';
 import { ConfirmDeleteModal } from '../components/ConfirmDeleteModal';
 import { DataTable, DataTableColumn } from '../components/DataTable';
 import { InfluencerApplicationsView } from './InfluencerApplicationsView';
+import { BrandRequirementsView } from './BrandRequirementsView';
 
 interface InfluencerDirectoryViewProps {
   userRole?: string;
   currentUser?: any;
-  initialTab?: 'directory' | 'applications';
+  initialTab?: 'directory' | 'requirements' | 'applications';
 }
 
 const CATEGORIES = [
@@ -32,19 +33,27 @@ const CATEGORIES = [
 ];
 
 export const InfluencerDirectoryView: React.FC<InfluencerDirectoryViewProps> = ({ userRole, currentUser, initialTab = 'directory' }) => {
-  // Navigation Tabs: Directory vs Application & Allocation
-  const [activeTab, setActiveTab] = useState<'directory' | 'applications'>(initialTab);
+  // Navigation Tabs: Directory vs Brand & Product Briefs vs Application & Allocation
+  const [activeTab, setActiveTab] = useState<'directory' | 'requirements' | 'applications'>(initialTab);
+  const [preselectedRequirement, setPreselectedRequirement] = useState<BrandRequirement | null>(null);
 
-  // Inbound Applications Stats for Header Metric Card
+  // Inbound Applications & Requirements Stats for Header Metric Card
   const [pendingAppsCount, setPendingAppsCount] = useState<number>(0);
   const [totalAppsCount, setTotalAppsCount] = useState<number>(0);
+  const [openBriefsCount, setOpenBriefsCount] = useState<number>(0);
 
   const fetchAppStats = async () => {
     try {
-      const res = await api.get('/influencer-applications?limit=1');
-      if (res.success && res.stats) {
-        setPendingAppsCount(res.stats.pending || 0);
-        setTotalAppsCount(res.stats.total || 0);
+      const [appsRes, reqsRes] = await Promise.all([
+        api.get('/influencer-applications?limit=1'),
+        api.get('/brand-requirements?limit=1')
+      ]);
+      if (appsRes.success && appsRes.stats) {
+        setPendingAppsCount(appsRes.stats.pending || 0);
+        setTotalAppsCount(appsRes.stats.total || 0);
+      }
+      if (reqsRes.success && reqsRes.stats) {
+        setOpenBriefsCount((reqsRes.stats.open || 0) + (reqsRes.stats.inProgress || 0));
       }
     } catch {
       // ignore
@@ -686,21 +695,27 @@ export const InfluencerDirectoryView: React.FC<InfluencerDirectoryViewProps> = (
               <Sparkles size={12} className="text-purple-600" /> Influencer Operations Hub
             </div>
             <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900">
-              {activeTab === 'directory' ? 'Influencer Directory' : 'Influencer Application and Allocation'}
+              {activeTab === 'directory'
+                ? 'Influencer Directory'
+                : activeTab === 'requirements'
+                ? 'Brand & Product Briefs'
+                : 'Influencer Application and Allocation'}
             </h1>
             <p className="text-slate-500 text-xs sm:text-sm mt-0.5 max-w-xl font-medium">
               {activeTab === 'directory'
                 ? 'Access and manage your verified creator database from past Barter & Paid collaborations.'
-                : 'Review inbound creators from the WhatsApp onboarding form, allot matching brands, and trigger alerts.'}
+                : activeTab === 'requirements'
+                ? 'Manage product-wise brand collaboration requirements submitted by Ad Buyers & Marketing Team.'
+                : 'Review inbound creators from the WhatsApp onboarding form, allot matching brands product-wise, and trigger alerts.'}
             </p>
           </div>
 
           {/* Unified Mode Switcher Tabs */}
-          <div className="inline-flex items-center p-1 bg-slate-100/90 rounded-xl border border-slate-200/80 shrink-0 self-start md:self-center shadow-2xs">
+          <div className="inline-flex flex-wrap items-center p-1 bg-slate-100/90 rounded-xl border border-slate-200/80 shrink-0 self-start md:self-center shadow-2xs gap-1">
             <button
               type="button"
               onClick={() => setActiveTab('directory')}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'directory'
                   ? 'bg-white text-purple-700 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -713,10 +728,31 @@ export const InfluencerDirectoryView: React.FC<InfluencerDirectoryViewProps> = (
             <button
               type="button"
               onClick={() => {
+                setActiveTab('requirements');
+                fetchAppStats();
+              }}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'requirements'
+                  ? 'bg-white text-indigo-700 shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <Briefcase size={14} className={activeTab === 'requirements' ? 'text-indigo-600' : 'text-slate-400'} />
+              <span>Brand &amp; Product Briefs</span>
+              {openBriefsCount > 0 && (
+                <span className="px-1.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700 text-[10px] font-black">
+                  {openBriefsCount}
+                </span>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
                 setActiveTab('applications');
                 fetchAppStats();
               }}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                 activeTab === 'applications'
                   ? 'bg-white text-purple-700 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -731,7 +767,19 @@ export const InfluencerDirectoryView: React.FC<InfluencerDirectoryViewProps> = (
 
       {/* ── Content Switcher based on Active Tab ────────────────────────── */}
       {activeTab === 'applications' ? (
-        <InfluencerApplicationsView isEmbedded={true} />
+        <InfluencerApplicationsView
+          isEmbedded={true}
+          preselectedRequirement={preselectedRequirement}
+          onClearPreselectedRequirement={() => setPreselectedRequirement(null)}
+        />
+      ) : activeTab === 'requirements' ? (
+        <BrandRequirementsView
+          isEmbedded={true}
+          onAllotForRequirement={(reqItem) => {
+            setPreselectedRequirement(reqItem);
+            setActiveTab('applications');
+          }}
+        />
       ) : (
         <>
 

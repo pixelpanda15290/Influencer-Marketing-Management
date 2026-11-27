@@ -230,6 +230,9 @@ export interface BrandAllotmentEmailPayload {
   influencerEmail: string;
   influencerName: string;
   brandName: string;
+  productName?: string;
+  productLink?: string;
+  collabDescription?: string;
   collabType: 'Barter' | 'Paid' | 'Both';
   deliverables?: string;
   commercialAmount?: number;
@@ -248,6 +251,9 @@ export const sendBrandAllotmentEmail = async (
     influencerEmail,
     influencerName,
     brandName,
+    productName = '',
+    productLink = '',
+    collabDescription = '',
     collabType,
     deliverables = '1 Dedicated Reel / Post + 1 Story',
     commercialAmount = 0,
@@ -255,6 +261,10 @@ export const sendBrandAllotmentEmail = async (
     notes = '',
     influencerPhone = ''
   } = payload;
+
+  const productClean = (productName || '').trim();
+  const productLinkClean = (productLink || '').trim();
+  const collabDescClean = (collabDescription || '').trim();
 
   const appName = (process.env.APP_NAME || 'Ad2ship Influencer Operations').trim();
   const fromAddress = (process.env.FROM_EMAIL || process.env.SMTP_USER || 'reena.lalwani@ad2ship.com').trim();
@@ -295,14 +305,14 @@ export const sendBrandAllotmentEmail = async (
 
   const textContent = `Dear ${firstName},
 
-We are pleased to inform you that our brand marketing team has reviewed your profile and shortlisted you for an official influencer campaign collaboration with ${brandClean}.
+We are pleased to inform you that our brand marketing team has reviewed your profile and shortlisted you for an official influencer campaign collaboration with ${brandClean}${productClean ? ` (${productClean})` : ''}.
 
 CAMPAIGN PARTICULARS & DELIVERABLES:
 • Allotted Brand: ${brandClean}
-• Collaboration Mode: ${collabBadgeLabel}
+${productClean ? `• Product: ${productClean}\n` : ''}${productLinkClean ? `• Product Link: ${productLinkClean}\n` : ''}• Collaboration Mode: ${collabBadgeLabel}
 • Deliverables: ${deliverables}
 • Campaign Manager: ${managerName}
-${notes && notes.trim() ? `• Special Guidelines: ${notes.trim()}\n` : ''}
+${collabDescClean ? `• Campaign Brief: ${collabDescClean}\n` : ''}${notes && notes.trim() ? `• Special Guidelines: ${notes.trim()}\n` : ''}
 NEXT STEPS:
 1. Accept Opportunity: Click the link below to confirm and secure your slot.
 Accept: ${acceptUrl}
@@ -383,6 +393,17 @@ Ad2ship Creator Operations`;
                   </td>
                 </tr>
 
+                ${productClean ? `
+                <!-- Row 1b: Allotted Product -->
+                <tr>
+                  <td width="38%" style="padding: 11px 16px; font-family: 'Roboto', Arial, sans-serif; font-size: 13px; font-weight: 400; color: #64748b; border-bottom: 1px solid #f1f5f9;">
+                    Product
+                  </td>
+                  <td width="62%" align="right" style="padding: 11px 16px; font-family: 'Roboto', Arial, sans-serif; font-size: 13px; font-weight: 600; color: #0f172a; border-bottom: 1px solid #f1f5f9; text-align: right;">
+                    ${productClean}${productLinkClean ? ` <a href="${productLinkClean}" target="_blank" style="font-size: 11px; color: #4f46e5; text-decoration: underline; font-weight: 500;">(View Product)</a>` : ''}
+                  </td>
+                </tr>` : ''}
+
                 <!-- Row 2: Collaboration Mode -->
                 <tr>
                   <td width="38%" style="padding: 11px 16px; font-family: 'Roboto', Arial, sans-serif; font-size: 13px; font-weight: 400; color: #64748b; border-bottom: 1px solid #f1f5f9;">
@@ -418,6 +439,22 @@ Ad2ship Creator Operations`;
                   </td>
                 </tr>
               </table>
+
+              <!-- Campaign Brief (if provided) -->
+              ${collabDescClean ? `
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color: #f5f3ff; border: 1px solid #ddd6fe; border-left: 3px solid #7c3aed; border-radius: 8px; margin-bottom: 16px;">
+                <tr>
+                  <td style="padding: 12px 16px;">
+                    <div style="font-family: 'Roboto', Arial, sans-serif; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.6px; color: #6d28d9; margin-bottom: 3px;">
+                      Product Collaboration Brief
+                    </div>
+                    <div style="font-family: 'Roboto', Arial, sans-serif; font-size: 12.5px; color: #334155; line-height: 1.5; font-weight: 400;">
+                      ${collabDescClean}
+                    </div>
+                  </td>
+                </tr>
+              </table>
+              ` : ''}
 
               <!-- Special Guidelines (if provided) -->
               ${notes && notes.trim() ? `

@@ -432,6 +432,8 @@ export interface IInfluencer extends Document {
   finalPaymentReceived: boolean;
 
   // Deliverables & Content Details
+  productName?: string;
+  brandRequirementId?: mongoose.Types.ObjectId;
   productLink?: string;
   videoType?: string;
   videoDescription?: string;
@@ -498,6 +500,8 @@ const InfluencerSchema = new Schema<IInfluencer>({
   paymentDoneBy: { type: String, default: '' },
 
   // Deliverables & Content
+  productName: { type: String, default: '' },
+  brandRequirementId: { type: Schema.Types.ObjectId, ref: 'BrandRequirement' },
   productLink: { type: String, default: '' },
   videoType: { type: String, default: 'Single Product Video' },
   videoDescription: { type: String, default: '' },
@@ -767,12 +771,31 @@ export interface IInfluencerApplication extends Document {
   opportunityRespondedAt?: Date;
   allottedBrandId?: mongoose.Types.ObjectId;
   allottedBrandName?: string;
+  allottedRequirementId?: mongoose.Types.ObjectId;
+  allottedProductName?: string;
+  allottedProductLink?: string;
+  allottedCollabDescription?: string;
+  allottedRequirementsSummary?: string;
   allottedCollabType?: 'Barter' | 'Paid' | 'Both';
   allottedDeliverables?: string;
   allottedCommercial?: number;
   allottedManagerId?: mongoose.Types.ObjectId;
   allottedManagerName?: string;
   allottedAt?: Date;
+  allotmentHistory?: Array<{
+    brandId?: mongoose.Types.ObjectId;
+    brandName: string;
+    requirementId?: mongoose.Types.ObjectId;
+    productName?: string;
+    productLink?: string;
+    collabType: 'Barter' | 'Paid' | 'Both';
+    deliverables?: string;
+    commercialAmount?: number;
+    managerName?: string;
+    managerNotes?: string;
+    status?: string;
+    allottedAt: Date;
+  }>;
 
   // Notification logs
   emailNotificationStatus?: 'Pending' | 'Sent' | 'Failed';
@@ -825,12 +848,31 @@ export const InfluencerApplicationSchema = new Schema<IInfluencerApplication>({
   opportunityRespondedAt: { type: Date },
   allottedBrandId: { type: Schema.Types.ObjectId, ref: 'Brand' },
   allottedBrandName: { type: String, default: '' },
+  allottedRequirementId: { type: Schema.Types.ObjectId, ref: 'BrandRequirement' },
+  allottedProductName: { type: String, default: '' },
+  allottedProductLink: { type: String, default: '' },
+  allottedCollabDescription: { type: String, default: '' },
+  allottedRequirementsSummary: { type: String, default: '' },
   allottedCollabType: { type: String, enum: ['Barter', 'Paid', 'Both'] },
   allottedDeliverables: { type: String, default: '' },
   allottedCommercial: { type: Number, default: 0 },
   allottedManagerId: { type: Schema.Types.ObjectId, ref: 'User' },
   allottedManagerName: { type: String, default: '' },
   allottedAt: { type: Date },
+  allotmentHistory: [{
+    brandId: { type: Schema.Types.ObjectId, ref: 'Brand' },
+    brandName: { type: String, default: '' },
+    requirementId: { type: Schema.Types.ObjectId, ref: 'BrandRequirement' },
+    productName: { type: String, default: '' },
+    productLink: { type: String, default: '' },
+    collabType: { type: String, enum: ['Barter', 'Paid', 'Both'] },
+    deliverables: { type: String, default: '' },
+    commercialAmount: { type: Number, default: 0 },
+    managerName: { type: String, default: '' },
+    managerNotes: { type: String, default: '' },
+    status: { type: String, default: 'Brand Allotted' },
+    allottedAt: { type: Date, default: Date.now }
+  }],
 
   emailNotificationStatus: { type: String, enum: ['Pending', 'Sent', 'Failed'], default: 'Pending' },
   emailSentAt: { type: Date },
@@ -848,6 +890,78 @@ InfluencerApplicationSchema.index({ status: 1, createdAt: -1 });
 InfluencerApplicationSchema.index({ whatsappNumber: 1 });
 InfluencerApplicationSchema.index({ instagramHandle: 1 });
 InfluencerApplicationSchema.index({ email: 1 });
+InfluencerApplicationSchema.index({ allottedRequirementId: 1 });
+
+// 17. Brand Product Collaboration Requirement Schema (Ad Buyers & Marketing Team Form)
+export interface IBrandRequirement extends Document {
+  requirementCode: string;
+  brandId?: mongoose.Types.ObjectId;
+  brandName: string;
+  productName?: string;
+  productCategory: string;
+  productLink?: string;
+  productMrp?: number;
+  collabType: 'Barter' | 'Paid' | 'Both';
+  budgetPerCreator?: number;
+  deliverables?: string;
+  collabDescription: string;
+  creatorRequirements?: string;
+  targetFollowerTier?: string;
+  creatorsNeeded: number;
+  refVideoLink?: string;
+  specialGuidelines?: string;
+  targetTimeline?: string;
+  submittedByName: string;
+  submittedByTeam: string;
+  submittedByEmail?: string;
+  submittedByPhone?: string;
+  status: 'Open' | 'In Progress' | 'Fulfilled' | 'Paused' | 'Closed';
+  source?: string;
+  createdBy?: mongoose.Types.ObjectId;
+  isDeleted?: boolean;
+  deletedAt?: Date;
+  deletedBy?: mongoose.Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export const BrandRequirementSchema = new Schema<IBrandRequirement>({
+  requirementCode: { type: String, required: true, unique: true, trim: true },
+  brandId: { type: Schema.Types.ObjectId, ref: 'Brand' },
+  brandName: { type: String, required: true, trim: true },
+  productName: { type: String, default: '', trim: true },
+  productCategory: { type: String, default: 'Fashion & Styling', trim: true },
+  productLink: { type: String, default: '', trim: true },
+  productMrp: { type: Number, default: 0 },
+  collabType: { type: String, enum: ['Barter', 'Paid', 'Both'], default: 'Barter', required: true },
+  budgetPerCreator: { type: Number, default: 0 },
+  deliverables: { type: String, default: '', trim: true },
+  collabDescription: { type: String, required: true, trim: true },
+  creatorRequirements: { type: String, default: '', trim: true },
+  targetFollowerTier: { type: String, default: 'Any', trim: true },
+  creatorsNeeded: { type: Number, default: 10 },
+  refVideoLink: { type: String, default: '', trim: true },
+  specialGuidelines: { type: String, default: '', trim: true },
+  targetTimeline: { type: String, default: '', trim: true },
+  submittedByName: { type: String, required: true, trim: true },
+  submittedByTeam: { type: String, default: 'Ad Buyers', trim: true },
+  submittedByEmail: { type: String, default: '', trim: true, lowercase: true },
+  submittedByPhone: { type: String, default: '', trim: true },
+  status: {
+    type: String,
+    enum: ['Open', 'In Progress', 'Fulfilled', 'Paused', 'Closed'],
+    default: 'Open'
+  },
+  source: { type: String, default: 'Ad Buyer & Marketing Brief Form' },
+  createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+  isDeleted: { type: Boolean, default: false },
+  deletedAt: { type: Date },
+  deletedBy: { type: Schema.Types.ObjectId, ref: 'User' }
+}, { timestamps: true });
+
+BrandRequirementSchema.index({ brandName: 1, status: 1 });
+BrandRequirementSchema.index({ brandId: 1, status: 1 });
+BrandRequirementSchema.index({ createdAt: -1 });
 
 export const Permission = mongoose.model<IPermission>('Permission', PermissionSchema);
 export const Role = mongoose.model<IRole>('Role', RoleSchema);
@@ -867,6 +981,7 @@ export const ContentCalendar = mongoose.model<IContentCalendar>('ContentCalendar
 export const GoogleSheetConfig = mongoose.model<IGoogleSheetConfig>('GoogleSheetConfig', GoogleSheetConfigSchema);
 export const InfluencerDirectory = mongoose.model<IInfluencerDirectory>('InfluencerDirectory', InfluencerDirectorySchema);
 export const InfluencerApplication = mongoose.model<IInfluencerApplication>('InfluencerApplication', InfluencerApplicationSchema);
+export const BrandRequirement = mongoose.model<IBrandRequirement>('BrandRequirement', BrandRequirementSchema);
 
 
 

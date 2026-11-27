@@ -492,6 +492,37 @@ export interface DiscoveredInfluencer {
   dbRating?: number | null;
 }
 
+export interface BrandRequirement {
+  _id: string;
+  requirementCode: string;
+  brandId?: string;
+  brandName: string;
+  productName?: string;
+  productCategory: string;
+  productLink?: string;
+  productMrp?: number;
+  collabType: 'Barter' | 'Paid' | 'Both';
+  budgetPerCreator?: number;
+  deliverables?: string;
+  collabDescription: string;
+  creatorRequirements?: string;
+  targetFollowerTier?: string;
+  creatorsNeeded: number;
+  refVideoLink?: string;
+  specialGuidelines?: string;
+  targetTimeline?: string;
+  submittedByName: string;
+  submittedByTeam: string;
+  submittedByEmail?: string;
+  submittedByPhone?: string;
+  status: 'Open' | 'In Progress' | 'Fulfilled' | 'Paused' | 'Closed';
+  source?: string;
+  allottedCount?: number;
+  acceptedCount?: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface InfluencerApplication {
   _id: string;
   fullName: string;
@@ -522,12 +553,31 @@ export interface InfluencerApplication {
   opportunityRespondedAt?: string;
   allottedBrandId?: string;
   allottedBrandName?: string;
+  allottedRequirementId?: string;
+  allottedProductName?: string;
+  allottedProductLink?: string;
+  allottedCollabDescription?: string;
+  allottedRequirementsSummary?: string;
   allottedCollabType?: 'Barter' | 'Paid' | 'Both';
   allottedDeliverables?: string;
   allottedCommercial?: number;
   allottedManagerId?: string;
   allottedManagerName?: string;
   allottedAt?: string;
+  allotmentHistory?: Array<{
+    brandId?: string;
+    brandName: string;
+    requirementId?: string;
+    productName?: string;
+    productLink?: string;
+    collabType: 'Barter' | 'Paid' | 'Both';
+    deliverables?: string;
+    commercialAmount?: number;
+    managerName?: string;
+    managerNotes?: string;
+    status?: string;
+    allottedAt: string;
+  }>;
   emailNotificationStatus?: 'Pending' | 'Sent' | 'Failed';
   emailSentAt?: string;
   whatsappMessageText?: string;

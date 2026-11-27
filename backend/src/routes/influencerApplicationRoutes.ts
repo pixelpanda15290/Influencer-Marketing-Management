@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import mongoose from 'mongoose';
-import { InfluencerApplication, Brand, Influencer, User } from '../models/allModels';
+import { InfluencerApplication, Brand, BrandRequirement, Influencer, User } from '../models/allModels';
 import { authenticateToken, AuthRequest } from '../middleware/auth';
 import { logActivity } from '../middleware/auditLog';
 import { sendBrandAllotmentEmail } from '../services/emailService';
@@ -166,7 +166,8 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
         { email: regex },
         { whatsappNumber: regex },
         { city: regex },
-        { allottedBrandName: regex }
+        { allottedBrandName: regex },
+        { allottedProductName: regex }
       ];
     }
 
@@ -233,6 +234,7 @@ const renderOpportunityResponseHtml = (params: {
   title: string;
   message: string;
   brandName?: string;
+  productName?: string;
   creatorName?: string;
   deliverables?: string;
   collabType?: string;
@@ -245,6 +247,7 @@ const renderOpportunityResponseHtml = (params: {
     title,
     message,
     brandName,
+    productName,
     creatorName,
     deliverables,
     collabType,
@@ -406,6 +409,11 @@ const renderOpportunityResponseHtml = (params: {
           <span class="info-label">Allotted Brand</span>
           <span class="info-val" style="color: #4338ca; font-weight: 600;">${brandName}</span>
         </div>
+        ${productName ? `
+        <div class="info-row">
+          <span class="info-label">Product</span>
+          <span class="info-val" style="color: #0f172a; font-weight: 600;">${productName}</span>
+        </div>` : ''}
         ${collabType ? `
         <div class="info-row">
           <span class="info-label">Collab Mode</span>
@@ -495,21 +503,29 @@ router.get('/respond', async (req: Request, res: Response) => {
     const newStatus = isAccept ? 'Opportunity Accepted' : 'Opportunity Declined';
     appItem.status = newStatus;
     appItem.opportunityRespondedAt = new Date();
+    if (Array.isArray(appItem.allotmentHistory) && appItem.allotmentHistory.length > 0) {
+      const lastIdx = appItem.allotmentHistory.length - 1;
+      appItem.allotmentHistory[lastIdx].status = newStatus;
+    }
     await appItem.save();
 
-    console.log(`[Influencer Response] ${appItem.fullName} responded: ${newStatus} for brand '${appItem.allottedBrandName}'`);
+    console.log(`[Influencer Response] ${appItem.fullName} responded: ${newStatus} for brand '${appItem.allottedBrandName}'${appItem.allottedProductName ? ` (Product: ${appItem.allottedProductName})` : ''}`);
 
     // Sync status with active Influencer tracking record if present
     if (isAccept) {
       try {
+        const trackingFilter: any = {
+          $or: [
+            { influencerInstagramId: appItem.instagramHandle, brandName: appItem.allottedBrandName },
+            { phone: appItem.whatsappNumber, brandName: appItem.allottedBrandName }
+          ],
+          isDeleted: { $ne: true }
+        };
+        if (appItem.allottedProductName) {
+          trackingFilter.productName = appItem.allottedProductName;
+        }
         await Influencer.updateMany(
-          {
-            $or: [
-              { influencerInstagramId: appItem.instagramHandle, brandName: appItem.allottedBrandName },
-              { phone: appItem.whatsappNumber, brandName: appItem.allottedBrandName }
-            ],
-            isDeleted: { $ne: true }
-          },
+          trackingFilter,
           {
             $set: {
               status: 'In Progress',
@@ -527,9 +543,10 @@ router.get('/respond', async (req: Request, res: Response) => {
       isAccept,
       title: isAccept ? 'Collaboration Confirmed! 🎉' : 'Opportunity Declined',
       message: isAccept
-        ? `Thank you, <strong>${appItem.fullName}</strong>! Your campaign slot for <strong>${appItem.allottedBrandName || 'the brand'}</strong> is officially accepted and confirmed on our operations panel.`
+        ? `Thank you, <strong>${appItem.fullName}</strong>! Your campaign slot for <strong>${appItem.allottedBrandName || 'the brand'}${appItem.allottedProductName ? ` (${appItem.allottedProductName})` : ''}</strong> is officially accepted and confirmed on our operations panel.`
         : `Thank you for letting us know, <strong>${appItem.fullName}</strong>. We have updated our campaign roster and our team will not contact you regarding this campaign.`,
       brandName: appItem.allottedBrandName,
+      productName: appItem.allottedProductName,
       creatorName: appItem.fullName,
       deliverables: appItem.allottedDeliverables,
       collabType: appItem.allottedCollabType,
@@ -572,6 +589,11 @@ router.post('/:id/allot-brand', authenticateToken, async (req: AuthRequest, res:
     const {
       brandId,
       brandName,
+      requirementId,
+      productName,
+      productLink,
+      collabDescription,
+      requirementsSummary,
       collabType,
       deliverables,
       commercialAmount,
@@ -592,8 +614,23 @@ router.post('/:id/allot-brand', authenticateToken, async (req: AuthRequest, res:
       return res.status(404).json({ success: false, message: 'Application record not found' });
     }
 
+    // Resolve optional product-wise BrandRequirement brief
+    let resolvedRequirement: any = null;
+    if (requirementId && mongoose.Types.ObjectId.isValid(requirementId)) {
+      resolvedRequirement = await BrandRequirement.findById(requirementId);
+      if (resolvedRequirement && resolvedRequirement.isDeleted) {
+        resolvedRequirement = null;
+      }
+    }
+
+    const finalProductName = (productName !== undefined ? String(productName) : (resolvedRequirement?.productName || '')).trim();
+    const finalProductLink = (productLink !== undefined ? String(productLink) : (resolvedRequirement?.productLink || '')).trim();
+    const finalCollabDesc = (collabDescription !== undefined ? String(collabDescription) : (resolvedRequirement?.collabDescription || '')).trim();
+    const finalReqSummary = (requirementsSummary !== undefined ? String(requirementsSummary) : (resolvedRequirement?.creatorRequirements || '')).trim();
+    const finalRefVideoLink = (resolvedRequirement?.refVideoLink || '').trim();
+
     const managerName = req.user?.name || 'Campaign Operations Manager';
-    const finalDeliverables = (deliverables || '1 Dedicated Reel / Post + 1 Story').trim();
+    const finalDeliverables = (deliverables || resolvedRequirement?.deliverables || '1 Dedicated Reel / Post + 1 Story').trim();
     const cleanComm = (collabType === 'Paid' || collabType === 'Both') ? (Number(commercialAmount) || 0) : 0;
 
     // Generate formatted WhatsApp message text
@@ -601,6 +638,10 @@ router.post('/:id/allot-brand', authenticateToken, async (req: AuthRequest, res:
     const commText = (collabType === 'Paid' || collabType === 'Both') && cleanComm > 0
       ? `• *Agreed Commercial:* ₹${cleanComm.toLocaleString('en-IN')}\n`
       : (collabType === 'Barter' ? '• *Collab Type:* Free PR Gifting / Barter Parcel\n' : '');
+
+    const productText = finalProductName ? `• *Product:* ${finalProductName}\n` : '';
+    const productLinkText = finalProductLink ? `• *Product Link:* ${finalProductLink}\n` : '';
+    const briefText = finalCollabDesc ? `\n📋 *Collaboration Brief:* ${finalCollabDesc}\n` : '';
 
     const notesText = managerNotes && managerNotes.trim()
       ? `\n📝 *Special Guidelines:* ${managerNotes.trim()}\n`
@@ -614,13 +655,13 @@ router.post('/:id/allot-brand', authenticateToken, async (req: AuthRequest, res:
 
     const whatsappMessage = `Hi ${appItem.fullName}! 🎉 Greetings from Ad2ship Influencer Operations!
 
-Great news! We have reviewed your profile and you have been shortlisted & *allotted* for an exclusive influencer marketing collaboration with *${brandName.trim()}*!
+Great news! We have reviewed your profile and you have been shortlisted & *allotted* for an exclusive influencer marketing collaboration with *${brandName.trim()}*${finalProductName ? ` for *${finalProductName}*` : ''}!
 
 📌 *Campaign Particulars:*
 • *Brand:* ${brandName.trim()}
-• *Collaboration:* ${collabType === 'Both' ? 'Barter + Paid' : `${collabType} Collab`}
+${productText}${productLinkText}• *Collaboration:* ${collabType === 'Both' ? 'Barter + Paid' : `${collabType} Collab`}
 • *Deliverables:* ${finalDeliverables}
-${commText}• *Assigned Manager:* ${managerName}${notesText}
+${commText}• *Assigned Manager:* ${managerName}${briefText}${notesText}
 ${nextStepText}
 
 👉 *Please reply to this WhatsApp message to confirm your availability & accept the collaboration!*`;
@@ -632,6 +673,8 @@ ${nextStepText}
     let resolvedBrandId: mongoose.Types.ObjectId | undefined = undefined;
     if (brandId && mongoose.Types.ObjectId.isValid(brandId)) {
       resolvedBrandId = new mongoose.Types.ObjectId(brandId);
+    } else if (resolvedRequirement?.brandId) {
+      resolvedBrandId = resolvedRequirement.brandId as mongoose.Types.ObjectId;
     } else {
       const foundBrand = await Brand.findOne({
         $or: [
@@ -648,6 +691,11 @@ ${nextStepText}
     appItem.status = 'Brand Allotted';
     appItem.allottedBrandId = resolvedBrandId;
     appItem.allottedBrandName = brandName.trim();
+    appItem.allottedRequirementId = resolvedRequirement ? (resolvedRequirement._id as mongoose.Types.ObjectId) : undefined;
+    appItem.allottedProductName = finalProductName;
+    appItem.allottedProductLink = finalProductLink;
+    appItem.allottedCollabDescription = finalCollabDesc;
+    appItem.allottedRequirementsSummary = finalReqSummary;
     appItem.allottedCollabType = collabType;
     appItem.allottedDeliverables = finalDeliverables;
     appItem.allottedCommercial = cleanComm;
@@ -660,7 +708,31 @@ ${nextStepText}
     appItem.emailNotificationStatus = sendEmailNotification && appItem.email ? 'Pending' : undefined;
     appItem.emailSentAt = sendEmailNotification && appItem.email ? new Date() : undefined;
 
+    if (!Array.isArray(appItem.allotmentHistory)) {
+      appItem.allotmentHistory = [];
+    }
+    appItem.allotmentHistory.push({
+      brandId: resolvedBrandId,
+      brandName: brandName.trim(),
+      requirementId: resolvedRequirement ? (resolvedRequirement._id as mongoose.Types.ObjectId) : undefined,
+      productName: finalProductName,
+      productLink: finalProductLink,
+      collabType,
+      deliverables: finalDeliverables,
+      commercialAmount: cleanComm,
+      managerName,
+      managerNotes: managerNotes ? managerNotes.trim() : '',
+      status: 'Brand Allotted',
+      allottedAt: new Date()
+    });
+
     await appItem.save();
+
+    // Auto-bump Open brief to In Progress once an influencer is allotted
+    if (resolvedRequirement && resolvedRequirement.status === 'Open') {
+      resolvedRequirement.status = 'In Progress';
+      await resolvedRequirement.save().catch(() => {});
+    }
 
     // Dynamically resolve public backend URL for Accept / Decline action buttons
     let detectedBaseUrl = (process.env.BACKEND_URL || process.env.API_URL || '').trim();
@@ -702,6 +774,9 @@ ${nextStepText}
             influencerEmail: appItem.email,
             influencerName: appItem.fullName,
             brandName: brandName.trim(),
+            productName: finalProductName || undefined,
+            productLink: finalProductLink || undefined,
+            collabDescription: finalCollabDesc || undefined,
             collabType,
             deliverables: finalDeliverables,
             commercialAmount: cleanComm,
@@ -728,30 +803,36 @@ ${nextStepText}
     // Optionally create or sync in Ad2ship Influencers table so it appears in daily tracking
     if (addToActiveTracking) {
       try {
-        const existingRecord = await Influencer.findOne({
-          $or: [
-            { influencerInstagramId: appItem.instagramHandle, brandName: brandName.trim() },
-            { phone: appItem.whatsappNumber, brandName: brandName.trim() }
-          ],
-          isDeleted: { $ne: true }
-        });
+        const dedupeOr = [
+          { influencerInstagramId: appItem.instagramHandle, brandName: brandName.trim() },
+          { phone: appItem.whatsappNumber, brandName: brandName.trim() }
+        ];
+        const existingQuery: any = finalProductName
+          ? { $or: dedupeOr, productName: finalProductName, isDeleted: { $ne: true } }
+          : { $or: dedupeOr, isDeleted: { $ne: true } };
+
+        const existingRecord = await Influencer.findOne(existingQuery);
 
         if (!existingRecord) {
           const newInfluencer = new Influencer({
             brandName: brandName.trim(),
             brandId: resolvedBrandId,
+            brandRequirementId: resolvedRequirement ? resolvedRequirement._id : undefined,
+            productName: finalProductName,
+            productLink: finalProductLink,
+            videoDescription: finalCollabDesc,
+            refVideoLink: finalRefVideoLink,
             influencerName: appItem.fullName,
             influencerInstagramId: appItem.instagramHandle,
             phone: appItem.whatsappNumber,
             profileLink: appItem.instagramUrl || `https://instagram.com/${appItem.instagramHandle.replace('@', '')}`,
-            category: collabType,
+            category: collabType === 'Paid' ? 'Paid' : (collabType === 'Barter' ? 'Barter' : 'Paid'),
             influencerManager: managerName,
-            status: collabType === 'Barter' ? 'Pending' : 'In Progress',
+            status: collabType === 'Barter' ? 'Pending' : 'In Discussion',
             influencerOnboardingAmt: cleanComm,
             connectedDate: new Date(),
             transactionDate: new Date(),
-            deliverables: finalDeliverables,
-            notes: `Auto-allotted from WhatsApp application form. Manager: ${managerName}`
+            notes: `Auto-allotted from WhatsApp application form${finalProductName ? ` (Product: ${finalProductName})` : ''}. Deliverables: ${finalDeliverables}. Manager: ${managerName}`
           });
           await newInfluencer.save();
         }
@@ -770,12 +851,12 @@ ${nextStepText}
       action: 'ALLOT_BRAND',
       entity: 'InfluencerApplication',
       entityId: appItem._id.toString(),
-      details: `Allotted brand '${brandName.trim()}' (${collabType}) to influencer ${appItem.fullName}. Deliverables: ${finalDeliverables}`
+      details: `Allotted brand '${brandName.trim()}'${finalProductName ? ` [Product: ${finalProductName}]` : ''} (${collabType}) to influencer ${appItem.fullName}. Deliverables: ${finalDeliverables}`
     });
 
     return res.json({
       success: true,
-      message: `Brand '${brandName}' allotted to ${appItem.fullName} successfully! Email dispatched and WhatsApp link generated.`,
+      message: `Brand '${brandName}'${finalProductName ? ` (${finalProductName})` : ''} allotted to ${appItem.fullName} successfully! Email dispatched and WhatsApp link generated.`,
       application: appItem,
       whatsappMessage,
       whatsappShareUrl

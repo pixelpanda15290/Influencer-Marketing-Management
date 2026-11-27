@@ -28,6 +28,7 @@ import { PendingApprovalModal } from './components/PendingApprovalModal';
 
 import { PublicCalendarShareView } from './views/PublicCalendarShareView';
 import { PublicInfluencerFormView } from './views/PublicInfluencerFormView';
+import { PublicBrandRequirementFormView } from './views/PublicBrandRequirementFormView';
 
 export const App: React.FC = () => {
   const [user, setUser] = useState<User | null>(null);
@@ -59,8 +60,17 @@ export const App: React.FC = () => {
            hash.startsWith('#/join') || hash.startsWith('#join');
   };
 
+  // Check if current hash is the Ad Buyers & Marketing Team brand product requirement form route
+  const isPublicBrandRequirementRoute = () => {
+    const hash = (window.location.hash || '').toLowerCase();
+    return hash.startsWith('#/brand-requirement') || hash.startsWith('#brand-requirement') ||
+           hash.startsWith('#/requirement') || hash.startsWith('#requirement') ||
+           hash.startsWith('#/campaign-brief') || hash.startsWith('#campaign-brief');
+  };
+
   const [shareToken, setShareToken] = useState<string | null>(getShareTokenFromHash);
   const [isPublicApply, setIsPublicApply] = useState<boolean>(isPublicApplyRoute);
+  const [isPublicBrandReq, setIsPublicBrandReq] = useState<boolean>(isPublicBrandRequirementRoute);
 
   // Helper to read initial active view from browser URL hash
   const getViewFromHash = () => {
@@ -92,6 +102,7 @@ export const App: React.FC = () => {
     const handleHashChange = () => {
       setShareToken(getShareTokenFromHash());
       setIsPublicApply(isPublicApplyRoute());
+      setIsPublicBrandReq(isPublicBrandRequirementRoute());
       setActiveView(getViewFromHash());
       window.scrollTo(0, 0);
     };
@@ -114,6 +125,11 @@ export const App: React.FC = () => {
   // If URL is public apply route, render public influencer application form immediately (no login required)
   if (isPublicApply) {
     return <PublicInfluencerFormView />;
+  }
+
+  // If URL is public brand requirement route (Ad Buyers & Marketing Team), render without login
+  if (isPublicBrandReq) {
+    return <PublicBrandRequirementFormView />;
   }
 
   const checkAuth = async () => {
@@ -327,6 +343,13 @@ export const App: React.FC = () => {
               userRole={user.role}
               currentUser={user}
               initialTab="applications"
+            />
+          )}
+          {activeView === 'brand-requirements' && (
+            <InfluencerDirectoryView
+              userRole={user.role}
+              currentUser={user}
+              initialTab="requirements"
             />
           )}
           {activeView === 'employee-brands' && (

@@ -3,10 +3,10 @@ import {
   Sparkles, Search, Filter, Phone, Mail, Instagram, CheckCircle2, 
   Clock, XCircle, ChevronRight, Copy, Check, ExternalLink, MessageCircle,
   Building2, DollarSign, Package, UserCheck, AlertCircle, Loader2,
-  RefreshCw, MapPin, Eye, FileText, Send, ArrowUpRight, User, Tag, Gift, Layers, Plus, IndianRupee, ChevronDown
+  RefreshCw, MapPin, Eye, FileText, Send, ArrowUpRight, User, Tag, Gift, Layers, Plus, IndianRupee, ChevronDown, Link2, X
 } from 'lucide-react';
 import { api } from '../services/api';
-import { InfluencerApplication, Brand } from '../types';
+import { InfluencerApplication, Brand, BrandRequirement } from '../types';
 import { Modal } from '../components/Modal';
 import { Pagination } from '../components/Pagination';
 
@@ -86,11 +86,18 @@ const getNicheDetailBadges = (app: InfluencerApplication): { label: string; valu
 
 interface InfluencerApplicationsViewProps {
   isEmbedded?: boolean;
+  preselectedRequirement?: BrandRequirement | null;
+  onClearPreselectedRequirement?: () => void;
 }
 
-export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProps> = ({ isEmbedded = false }) => {
+export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProps> = ({
+  isEmbedded = false,
+  preselectedRequirement = null,
+  onClearPreselectedRequirement
+}) => {
   const [applications, setApplications] = useState<InfluencerApplication[]>([]);
   const [brands, setBrands] = useState<Brand[]>([]);
+  const [requirements, setRequirements] = useState<BrandRequirement[]>([]);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [stats, setStats] = useState({
@@ -124,6 +131,11 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
   const [allotForm, setAllotForm] = useState({
     brandId: '',
     brandName: '',
+    requirementId: '',
+    productName: '',
+    productLink: '',
+    collabDescription: '',
+    requirementsSummary: '',
     collabType: 'Barter' as 'Barter' | 'Paid' | 'Both',
     deliverables: '1 Dedicated Reel + 1 Story',
     commercialAmount: 0,
@@ -136,6 +148,7 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
     whatsappShareUrl: string;
     whatsappMessage: string;
     brandName: string;
+    productName?: string;
     influencerName: string;
   } | null>(null);
 
@@ -200,7 +213,7 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
     }
   }, [showBrandDropdown]);
 
-  // Fetch Brands for dropdown
+  // Fetch Brands & Product Requirements for dropdown
   const fetchBrands = async () => {
     try {
       const res = await api.get('/brands?all=true&limit=500');
@@ -211,6 +224,19 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
     } catch (err) {
       console.error('Failed to load brands:', err);
     }
+  };
+
+  const fetchRequirements = async (): Promise<BrandRequirement[]> => {
+    try {
+      const res = await api.get('/brand-requirements?all=true');
+      if (res.success && Array.isArray(res.items)) {
+        setRequirements(res.items);
+        return res.items;
+      }
+    } catch (err) {
+      console.error('Failed to load product requirements:', err);
+    }
+    return [];
   };
 
   // Fetch Applications
@@ -245,6 +271,7 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
 
   useEffect(() => {
     fetchBrands();
+    fetchRequirements();
   }, []);
 
   useEffect(() => {
@@ -286,25 +313,88 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
       }
     }
 
-    const firstBrand = currentBrands[0];
-    setAllotForm({
-      brandId: (firstBrand as any)?._id || firstBrand?.brandId || '',
-      brandName: firstBrand?.brandName || (currentBrands.length === 0 ? 'Other / Custom Brand' : ''),
-      collabType: (appItem.collabTypePreference === 'Paid' || appItem.collabTypePreference === 'Both')
-        ? appItem.collabTypePreference
-        : 'Barter',
-      deliverables: '1 Dedicated Reel + 1 Story',
-      commercialAmount: appItem.costPerReel || 0,
-      managerNotes: '',
-      sendEmailNotification: true,
-      addToActiveTracking: true
-    });
-    setIsCustomBrand(false);
-    setCustomBrandName('');
+    // Refresh product requirements so latest Ad Buyer / Marketing briefs appear
+    const latestReqs = await fetchRequirements();
+    const activeReqs = (latestReqs.length > 0 ? latestReqs : requirements).filter(r => r.status !== 'Closed');
+
+    if (preselectedRequirement) {
+      const matchedBrand = currentBrands.find(
+        b => b.brandName.toLowerCase() === preselectedRequirement.brandName.toLowerCase()
+      );
+      const isCustom = !matchedBrand;
+      setAllotForm({
+        brandId: matchedBrand ? ((matchedBrand as any)?._id || matchedBrand.brandId || '') : (preselectedRequirement.brandId || ''),
+        brandName: matchedBrand ? matchedBrand.brandName : preselectedRequirement.brandName,
+        requirementId: preselectedRequirement._id,
+        productName: preselectedRequirement.productName || preselectedRequirement.productCategory || '',
+        productLink: preselectedRequirement.productLink || '',
+        collabDescription: preselectedRequirement.collabDescription || '',
+        requirementsSummary: preselectedRequirement.creatorRequirements || '',
+        collabType: preselectedRequirement.collabType || 'Barter',
+        deliverables: preselectedRequirement.deliverables || '1 Dedicated Reel + 1 Story',
+        commercialAmount: preselectedRequirement.budgetPerCreator || appItem.costPerReel || 0,
+        managerNotes: preselectedRequirement.specialGuidelines || '',
+        sendEmailNotification: true,
+        addToActiveTracking: true
+      });
+      setIsCustomBrand(isCustom);
+      setCustomBrandName(isCustom ? preselectedRequirement.brandName : '');
+    } else {
+      const firstBrand = currentBrands[0];
+      const defaultBrandName = firstBrand?.brandName || (activeReqs[0]?.brandName || (currentBrands.length === 0 ? 'Other / Custom Brand' : ''));
+      setAllotForm({
+        brandId: (firstBrand as any)?._id || firstBrand?.brandId || '',
+        brandName: defaultBrandName,
+        requirementId: '',
+        productName: '',
+        productLink: '',
+        collabDescription: '',
+        requirementsSummary: '',
+        collabType: (appItem.collabTypePreference === 'Paid' || appItem.collabTypePreference === 'Both')
+          ? appItem.collabTypePreference
+          : 'Barter',
+        deliverables: '1 Dedicated Reel + 1 Story',
+        commercialAmount: appItem.costPerReel || 0,
+        managerNotes: '',
+        sendEmailNotification: true,
+        addToActiveTracking: true
+      });
+      setIsCustomBrand(false);
+      setCustomBrandName('');
+    }
+
     setShowBrandDropdown(false);
     setBrandSearchQuery('');
     setShowDeliverablesDropdown(false);
     setShowAllotModal(true);
+  };
+
+  // Select a product requirement inside the Allot Brand Modal
+  const handleSelectRequirementInModal = (reqItem: BrandRequirement | null) => {
+    if (!reqItem) {
+      setAllotForm(prev => ({
+        ...prev,
+        requirementId: '',
+        productName: '',
+        productLink: '',
+        collabDescription: '',
+        requirementsSummary: ''
+      }));
+      return;
+    }
+
+    setAllotForm(prev => ({
+      ...prev,
+      requirementId: reqItem._id,
+      productName: reqItem.productName || reqItem.productCategory || '',
+      productLink: reqItem.productLink || '',
+      collabDescription: reqItem.collabDescription || '',
+      requirementsSummary: reqItem.creatorRequirements || '',
+      collabType: reqItem.collabType || prev.collabType,
+      deliverables: reqItem.deliverables || prev.deliverables,
+      commercialAmount: reqItem.budgetPerCreator ? reqItem.budgetPerCreator : prev.commercialAmount,
+      managerNotes: reqItem.specialGuidelines || prev.managerNotes
+    }));
   };
 
   // Submit Brand Allotment
@@ -323,6 +413,11 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
       const res = await api.post(`/influencer-applications/${selectedApp._id}/allot-brand`, {
         brandId: isCustomBrand ? '' : allotForm.brandId,
         brandName: finalBrandName,
+        requirementId: allotForm.requirementId || '',
+        productName: allotForm.productName.trim(),
+        productLink: allotForm.productLink.trim(),
+        collabDescription: allotForm.collabDescription.trim(),
+        requirementsSummary: allotForm.requirementsSummary.trim(),
         collabType: allotForm.collabType,
         deliverables: allotForm.deliverables,
         commercialAmount: allotForm.commercialAmount,
@@ -337,9 +432,11 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
           whatsappShareUrl: res.whatsappShareUrl,
           whatsappMessage: res.whatsappMessage,
           brandName: finalBrandName,
+          productName: allotForm.productName.trim() || undefined,
           influencerName: selectedApp.fullName
         });
         fetchApplications();
+        fetchRequirements();
       } else {
         alert(res.message || 'Failed to allot brand.');
       }
@@ -410,8 +507,40 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
     return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
   };
 
+  // Active requirements grouped by brand (case-insensitive)
+  const activeRequirements = requirements.filter(r => r.status !== 'Closed');
+  const currentBrandNameForLookup = isCustomBrand ? customBrandName.trim() : allotForm.brandName.trim();
+  const matchingProductRequirements = currentBrandNameForLookup
+    ? activeRequirements.filter(r => r.brandName.toLowerCase() === currentBrandNameForLookup.toLowerCase())
+    : [];
+
+  const getBrandBriefCount = (bName: string) =>
+    activeRequirements.filter(r => r.brandName.toLowerCase() === bName.toLowerCase()).length;
+
+  // Combine portfolio brands with any custom brand names from active requirements
+  const combinedBrands: Brand[] = [
+    ...brands,
+    ...activeRequirements
+      .filter(r => !brands.some(b => b.brandName.toLowerCase() === r.brandName.toLowerCase()))
+      .reduce((acc: Brand[], r) => {
+        if (!acc.some(x => x.brandName.toLowerCase() === r.brandName.toLowerCase())) {
+          acc.push({
+            _id: r.brandId || `req-brand-${r.brandName}`,
+            brandId: '',
+            brandName: r.brandName,
+            industry: r.productCategory || 'Product Brief',
+            contactPerson: '',
+            email: '',
+            phone: '',
+            status: 'Active'
+          });
+        }
+        return acc;
+      }, [])
+  ];
+
   // Filter brands for searchable allot dropdown
-  const filteredBrands = brands.filter(b => {
+  const filteredBrands = combinedBrands.filter(b => {
     if (!brandSearchQuery.trim()) return true;
     const q = brandSearchQuery.trim().toLowerCase();
     const nameMatch = (b.brandName || '').toLowerCase().includes(q);
@@ -518,6 +647,32 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
               <span>Preview Form</span>
             </a>
           </div>
+        </div>
+      )}
+
+      {/* ── Active Product Brief Target Banner (when navigated from Brand & Product Briefs) ── */}
+      {preselectedRequirement && (
+        <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-3.5 px-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+          <div className="flex items-center gap-2.5 text-xs">
+            <span className="px-2 py-0.5 rounded-md bg-indigo-600 text-white font-black text-[10px]">
+              {preselectedRequirement.requirementCode}
+            </span>
+            <span className="font-bold text-indigo-950">
+              Product Allotment Mode Active: <strong>{preselectedRequirement.brandName}</strong> &rarr; <strong>{preselectedRequirement.productName || preselectedRequirement.productCategory}</strong>
+            </span>
+            <span className="text-indigo-700 hidden md:inline">
+              (Click &ldquo;Allot&rdquo; on any influencer below to allot this product)
+            </span>
+          </div>
+          {onClearPreselectedRequirement && (
+            <button
+              type="button"
+              onClick={onClearPreselectedRequirement}
+              className="px-2.5 py-1 rounded-lg bg-white hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[11px] font-bold flex items-center gap-1 self-start sm:self-center cursor-pointer"
+            >
+              <X size={12} /> Clear Target
+            </button>
+          )}
         </div>
       )}
 
@@ -789,6 +944,12 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                               <Building2 size={12} className="text-purple-600" />
                               <span>{item.allottedBrandName}</span>
                             </div>
+                            {item.allottedProductName && (
+                              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200/70 text-[10px] font-bold">
+                                <Package size={10} className="text-indigo-600 shrink-0" />
+                                <span className="truncate max-w-[160px]">{item.allottedProductName}</span>
+                              </div>
+                            )}
                           </div>
                         ) : isDeclined ? (
                           <div className="space-y-1">
@@ -797,7 +958,7 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                             </span>
                             {item.allottedBrandName && (
                               <div className="text-[11px] text-slate-400 font-medium line-through">
-                                {item.allottedBrandName}
+                                {item.allottedBrandName}{item.allottedProductName ? ` (${item.allottedProductName})` : ''}
                               </div>
                             )}
                           </div>
@@ -810,6 +971,12 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                               <Building2 size={12} className="text-purple-600" />
                               <span>{item.allottedBrandName}</span>
                             </div>
+                            {item.allottedProductName && (
+                              <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-800 border border-indigo-200/70 text-[10px] font-bold">
+                                <Package size={10} className="text-indigo-600 shrink-0" />
+                                <span className="truncate max-w-[160px]">{item.allottedProductName}</span>
+                              </div>
+                            )}
                           </div>
                         ) : isPending ? (
                           <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200/80 text-[11px] font-black uppercase shadow-2xs">
@@ -825,14 +992,14 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                       {/* Actions */}
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {/* Allot Brand Button */}
+                          {/* Allot Button */}
                           <button
                             onClick={() => handleOpenAllotModal(item)}
                             className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
-                            title="Allot Brand to this Influencer"
+                            title="Allot to this Influencer"
                           >
                             <Building2 size={13} />
-                            <span>{isAllotted ? 'Re-allot' : 'Allot Brand'}</span>
+                            <span>{isAllotted ? 'Re-allot' : 'Allot'}</span>
                           </button>
 
                           {/* Direct WhatsApp Message Link */}
@@ -901,7 +1068,7 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                 </div>
                 <div>
                   <h4 className="font-extrabold text-emerald-950 text-sm">
-                    {allotmentSuccessData.brandName} allotted to {allotmentSuccessData.influencerName}!
+                    {allotmentSuccessData.brandName}{allotmentSuccessData.productName ? ` — ${allotmentSuccessData.productName}` : ''} allotted to {allotmentSuccessData.influencerName}!
                   </h4>
                   <p className="text-xs text-emerald-800 mt-1 leading-relaxed">
                     An official brand allotment confirmation email is being dispatched to <strong>{selectedApp.email}</strong> in the background.
@@ -1078,7 +1245,12 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                                   setAllotForm(prev => ({
                                     ...prev,
                                     brandName: first.brandName,
-                                    brandId: (first as any)?._id || first.brandId || ''
+                                    brandId: (first as any)?._id || first.brandId || '',
+                                    requirementId: '',
+                                    productName: '',
+                                    productLink: '',
+                                    collabDescription: '',
+                                    requirementsSummary: ''
                                   }));
                                   setShowBrandDropdown(false);
                                   setBrandSearchQuery('');
@@ -1117,7 +1289,12 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                                   setAllotForm(prev => ({
                                     ...prev,
                                     brandName: b.brandName,
-                                    brandId: (b as any)?._id || b.brandId || ''
+                                    brandId: (b as any)?._id || b.brandId || '',
+                                    requirementId: '',
+                                    productName: '',
+                                    productLink: '',
+                                    collabDescription: '',
+                                    requirementsSummary: ''
                                   }));
                                   setShowBrandDropdown(false);
                                   setBrandSearchQuery('');
@@ -1135,8 +1312,13 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                                     {b.brandName.charAt(0).toUpperCase()}
                                   </div>
                                   <div className="min-w-0">
-                                    <div className="text-xs sm:text-sm font-bold text-slate-900 truncate">
+                                    <div className="text-xs sm:text-sm font-bold text-slate-900 truncate flex items-center gap-1.5">
                                       <span>{b.brandName}</span>
+                                      {getBrandBriefCount(b.brandName) > 0 && (
+                                        <span className="px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 text-[10px] font-black shrink-0">
+                                          {getBrandBriefCount(b.brandName)} Product{getBrandBriefCount(b.brandName) > 1 ? 's' : ''}
+                                        </span>
+                                      )}
                                     </div>
                                     {b.industry && (
                                       <div className="text-[11px] text-slate-500 truncate">
@@ -1284,6 +1466,134 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                     </button>
                   </div>
                 </div>
+              </div>
+
+              {/* Product-Wise Allotment Selector (from Ad Buyers & Marketing Team Briefs) */}
+              <div className="p-3.5 bg-indigo-50/50 border border-indigo-200/80 rounded-2xl space-y-2.5">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <label className="text-xs font-black uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
+                    <Package size={14} className="text-indigo-600" />
+                    Product-Wise Allotment
+                    {matchingProductRequirements.length > 0 && (
+                      <span className="px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 text-[10px] font-black normal-case">
+                        {matchingProductRequirements.length} Brief{matchingProductRequirements.length > 1 ? 's' : ''} Available for {currentBrandNameForLookup}
+                      </span>
+                    )}
+                  </label>
+                  {allotForm.requirementId && (
+                    <button
+                      type="button"
+                      onClick={() => handleSelectRequirementInModal(null)}
+                      className="text-[11px] font-bold text-indigo-700 hover:text-rose-600 cursor-pointer"
+                    >
+                      Switch to General / Custom
+                    </button>
+                  )}
+                </div>
+
+                {matchingProductRequirements.length > 0 ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-44 overflow-y-auto pr-0.5">
+                      {matchingProductRequirements.map(reqItem => {
+                        const isSelected = allotForm.requirementId === reqItem._id;
+                        return (
+                          <button
+                            type="button"
+                            key={reqItem._id}
+                            onClick={() => handleSelectRequirementInModal(reqItem)}
+                            className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
+                              isSelected
+                                ? 'bg-white border-indigo-500 ring-2 ring-indigo-500/20 shadow-xs'
+                                : 'bg-white/80 hover:bg-white border-indigo-100 hover:border-indigo-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1.5">
+                              <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 text-[10px] font-black">
+                                {reqItem.requirementCode}
+                              </span>
+                              <span className="text-[10px] font-bold text-slate-500">
+                                {reqItem.allottedCount || 0}/{reqItem.creatorsNeeded} allotted
+                              </span>
+                            </div>
+                            <div className="font-extrabold text-slate-900 text-xs mt-1 truncate" title={reqItem.productName || reqItem.productCategory}>
+                              {reqItem.productName || reqItem.productCategory}
+                            </div>
+                            <div className="text-[10px] text-slate-500 mt-0.5 flex items-center justify-between gap-1">
+                              <span className="truncate">{reqItem.collabType} &bull; {reqItem.deliverables}</span>
+                              {isSelected && <CheckCircle2 size={13} className="text-indigo-600 shrink-0" />}
+                            </div>
+                          </button>
+                        );
+                      })}
+
+                      {/* General Brand Option */}
+                      <button
+                        type="button"
+                        onClick={() => handleSelectRequirementInModal(null)}
+                        className={`p-2.5 rounded-xl border text-left transition cursor-pointer flex flex-col justify-center ${
+                          !allotForm.requirementId
+                            ? 'bg-white border-purple-500 ring-2 ring-purple-500/20 shadow-xs'
+                            : 'bg-white/60 hover:bg-white border-slate-200'
+                        }`}
+                      >
+                        <div className="font-extrabold text-slate-800 text-xs flex items-center justify-between">
+                          <span>General / Other Product</span>
+                          {!allotForm.requirementId && <CheckCircle2 size={13} className="text-purple-600 shrink-0" />}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">
+                          Allot without a saved product brief (or enter product name manually)
+                        </div>
+                      </button>
+                    </div>
+
+                    {/* Preview of Selected Brief */}
+                    {allotForm.requirementId && (
+                      <div className="bg-white border border-indigo-200/80 rounded-xl p-2.5 text-[11px] space-y-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-black text-indigo-900">Selected Product Brief: {allotForm.productName}</span>
+                          {allotForm.productLink && (
+                            <a href={allotForm.productLink} target="_blank" rel="noopener noreferrer" className="text-indigo-600 font-bold hover:underline inline-flex items-center gap-0.5 shrink-0">
+                              <Link2 size={11} /> Product Link
+                            </a>
+                          )}
+                        </div>
+                        {allotForm.collabDescription && (
+                          <div className="text-slate-600 line-clamp-2">
+                            <strong className="text-slate-800">Collab Brief:</strong> {allotForm.collabDescription}
+                          </div>
+                        )}
+                        {allotForm.requirementsSummary && (
+                          <div className="text-slate-600 line-clamp-2">
+                            <strong className="text-slate-800">Creator Requirements:</strong> {allotForm.requirementsSummary}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-500">
+                    No saved product briefs from Ad Buyers / Marketing Team for <strong>{currentBrandNameForLookup || 'this brand'}</strong> yet. You can optionally enter a product name below or proceed with standard brand allotment.
+                  </div>
+                )}
+
+                {!allotForm.requirementId && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+                    <input
+                      type="text"
+                      value={allotForm.productName}
+                      onChange={e => setAllotForm(prev => ({ ...prev, productName: e.target.value }))}
+                      placeholder="Product Name (optional, e.g. Vitamin C Serum)"
+                      className="w-full px-3 py-2 bg-white border border-indigo-200/80 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
+                    />
+                    <input
+                      type="url"
+                      value={allotForm.productLink}
+                      onChange={e => setAllotForm(prev => ({ ...prev, productLink: e.target.value }))}
+                      placeholder="Product Link (optional)"
+                      className="w-full px-3 py-2 bg-white border border-indigo-200/80 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500"
+                    />
+                  </div>
+                )}
               </div>
 
               {/* Conditional Mode Details: Barter PR details vs Paid Commercial input vs Both */}
@@ -1828,6 +2138,17 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                         <span>{selectedApp.allottedBrandName}</span>
                         <span className="text-xs font-normal text-slate-500">({selectedApp.allottedCollabType})</span>
                       </div>
+                      {selectedApp.allottedProductName && (
+                        <div className="mt-1 inline-flex items-center gap-1 px-2 py-0.5 rounded bg-indigo-50 text-indigo-800 border border-indigo-200 text-[11px] font-bold">
+                          <Package size={11} className="text-indigo-600" />
+                          <span>{selectedApp.allottedProductName}</span>
+                          {selectedApp.allottedProductLink && (
+                            <a href={selectedApp.allottedProductLink} target="_blank" rel="noopener noreferrer" className="text-indigo-600 underline ml-1">
+                              Link
+                            </a>
+                          )}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <span className="text-slate-400 font-bold block text-[10px] uppercase">Deliverables</span>
@@ -1873,7 +2194,7 @@ export const InfluencerApplicationsView: React.FC<InfluencerApplicationsViewProp
                 }}
                 className="flex-1 py-3 px-4 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-md shadow-purple-500/20 transition cursor-pointer"
               >
-                <Building2 size={15} /> Allot Brand
+                <Building2 size={15} /> Allot
               </button>
               <a
                 href={getWhatsAppDirectUrl(selectedApp)}
