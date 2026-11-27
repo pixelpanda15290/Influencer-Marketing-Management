@@ -132,6 +132,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ userRole, currentUse
   const [newRoleName, setNewRoleName] = useState('');
   const [newRoleDescription, setNewRoleDescription] = useState('');
   const [newRolePermissions, setNewRolePermissions] = useState<string[]>([]);
+  const [createRoleError, setCreateRoleError] = useState<string | null>(null);
 
   const fetchData = async () => {
     setLoading(true);
@@ -219,28 +220,31 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ userRole, currentUse
 
   const handleCreateRole = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newRoleName) return;
+    if (!newRoleName.trim()) return;
 
     setSaving(true);
     setMessage(null);
+    setCreateRoleError(null);
 
     try {
       const res = await api.post('/roles', {
-        name: newRoleName,
+        name: newRoleName.trim(),
         description: newRoleDescription,
         permissions: newRolePermissions
       });
 
       if (res.success) {
-        setMessage({ type: 'success', text: `New Role "${newRoleName}" created successfully!` });
+        setMessage({ type: 'success', text: `New Role "${newRoleName.trim()}" created successfully!` });
         setShowCreateRoleModal(false);
         setNewRoleName('');
         setNewRoleDescription('');
         setNewRolePermissions([]);
         fetchData();
+      } else {
+        setCreateRoleError(res.message || 'Failed to create role');
       }
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message || 'Failed to create role' });
+      setCreateRoleError(err.message || 'Failed to create role');
     } finally {
       setSaving(false);
     }
@@ -283,7 +287,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ userRole, currentUse
 
         {isManagerOrAdmin && (
           <button
-            onClick={() => setShowCreateRoleModal(true)}
+            onClick={() => {
+              setCreateRoleError(null);
+              setShowCreateRoleModal(true);
+            }}
             className="px-4 py-2.5 btn-gradient-primary text-white rounded-xl font-bold text-xs flex items-center space-x-2 shadow-md shrink-0 cursor-pointer"
           >
             <Plus size={16} />
@@ -598,6 +605,12 @@ export const SettingsView: React.FC<SettingsViewProps> = ({ userRole, currentUse
         maxWidth="max-w-2xl"
       >
         <form onSubmit={handleCreateRole} className="space-y-4 text-xs">
+          {createRoleError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2 text-rose-700 text-xs font-bold">
+              <AlertCircle size={15} className="shrink-0 mt-0.5" />
+              <span>{createRoleError}</span>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-extrabold text-slate-700 uppercase mb-1">Role Title</label>
             <input

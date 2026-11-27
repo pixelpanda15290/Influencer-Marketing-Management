@@ -38,18 +38,20 @@ router.get('/permissions', authenticateToken, async (req: AuthRequest, res: Resp
 });
 
 // POST /api/v1/roles
-router.post('/', authenticateToken, checkPermission('settings.update'), async (req: AuthRequest, res: Response) => {
+router.post('/', authenticateToken, checkPermission('settings.update', 'employee.create', 'employee.update'), async (req: AuthRequest, res: Response) => {
   const { name, description, permissions } = req.body;
-  if (!name) {
+  const trimmedName = (name || '').trim();
+  if (!trimmedName) {
     return res.status(400).json({ success: false, message: 'Role name is required' });
   }
 
   try {
-    const existing = await Role.findOne({ name });
+    const escaped = trimmedName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const existing = await Role.findOne({ name: new RegExp(`^${escaped}$`, 'i') });
     if (existing) return res.status(400).json({ success: false, message: 'Role already exists' });
 
     const role = await Role.create({
-      name,
+      name: trimmedName,
       description,
       permissions: permissions || [],
       isSystemRole: false
@@ -62,7 +64,7 @@ router.post('/', authenticateToken, checkPermission('settings.update'), async (r
 });
 
 // PUT /api/v1/roles/:id
-router.put('/:id', authenticateToken, async (req: AuthRequest, res: Response) => {
+router.put('/:id', authenticateToken, checkPermission('settings.update', 'employee.update', 'employee.create'), async (req: AuthRequest, res: Response) => {
   const { description, permissions } = req.body;
 
   try {

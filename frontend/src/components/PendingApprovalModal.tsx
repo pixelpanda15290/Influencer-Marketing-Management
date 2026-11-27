@@ -7,8 +7,21 @@ interface PendingApprovalModalProps {
   currentUser: UserType | null;
 }
 
+const DEFAULT_ROLES = [
+  'Employee',
+  'Posting & Content Executive',
+  'Barter Collab Executive',
+  'Paid Collab Executive',
+  'Team Leader',
+  'Assistant Manager',
+  'Assistant Marketing Manager',
+  'Marketing Manager',
+  'Admin'
+];
+
 export const PendingApprovalModal: React.FC<PendingApprovalModalProps> = ({ currentUser }) => {
   const [pendingUsers, setPendingUsers] = useState<any[]>([]);
+  const [rolesList, setRolesList] = useState<string[]>(DEFAULT_ROLES);
   const [isOpen, setIsOpen] = useState(false);
   const [approvingId, setApprovingId] = useState<string | null>(null);
   const [selectedRoles, setSelectedRoles] = useState<{ [key: string]: string }>({});
@@ -22,10 +35,25 @@ export const PendingApprovalModal: React.FC<PendingApprovalModalProps> = ({ curr
     (currentUser.role && currentUser.role.toLowerCase().includes('assistant'))
   );
 
+  const fetchRoles = async () => {
+    try {
+      const res = await api.get('/roles');
+      if (res.success && Array.isArray(res.data)) {
+        const apiRoleNames = res.data.map((r: any) => r.name).filter(Boolean);
+        setRolesList(Array.from(new Set([...DEFAULT_ROLES, ...apiRoleNames])));
+      }
+    } catch (err) {
+      console.error('Error fetching roles for approval modal:', err);
+    }
+  };
+
   const fetchPendingApprovals = async () => {
     if (!isManager) return;
     try {
-      const res = await api.get('/employees/pending-approvals');
+      const [res] = await Promise.all([
+        api.get('/employees/pending-approvals'),
+        fetchRoles()
+      ]);
       if (res.success && res.data && res.data.length > 0) {
         setPendingUsers(res.data);
         setIsOpen(true);
@@ -161,10 +189,11 @@ export const PendingApprovalModal: React.FC<PendingApprovalModalProps> = ({ curr
                     onChange={(e) => setSelectedRoles({ ...selectedRoles, [emp._id]: e.target.value })}
                     className="bg-slate-50 hover:bg-white border border-slate-300/90 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-100 cursor-pointer shadow-2xs transition"
                   >
-                    <option value="Employee">Role: Employee</option>
-                    <option value="Assistant Marketing Manager">Role: Assistant Manager</option>
-                    <option value="Marketing Manager">Role: Marketing Manager</option>
-                    <option value="Admin">Role: Admin</option>
+                    {Array.from(new Set([...rolesList, emp.role].filter(Boolean))).map((roleName) => (
+                      <option key={roleName} value={roleName}>
+                        Role: {roleName}
+                      </option>
+                    ))}
                   </select>
 
                   <button

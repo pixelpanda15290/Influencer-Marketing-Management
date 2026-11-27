@@ -37,7 +37,7 @@ router.get('/', authenticateToken, async (req: AuthRequest, res: Response) => {
 });
 
 // POST /api/v1/settings
-router.post('/', authenticateToken, checkPermission('settings.update'), async (req: AuthRequest, res: Response) => {
+router.post('/', authenticateToken, checkPermission('settings.update', 'employee.update'), async (req: AuthRequest, res: Response) => {
   const { key, value, category, description } = req.body;
 
   if (!key || value === undefined) {
