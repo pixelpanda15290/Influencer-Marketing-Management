@@ -24,8 +24,8 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/v1/departments/all - Get all departments including inactive (Super Admin / Admin)
-router.get('/all', authenticateToken, checkPermission('settings.view'), async (req: AuthRequest, res: Response) => {
+// GET /api/v1/departments/all - Get all departments including inactive (Super Admin / Admin / Managers)
+router.get('/all', authenticateToken, checkPermission('settings.view', 'employee.view'), async (req: AuthRequest, res: Response) => {
   try {
     const totalCount = await Department.countDocuments({ isDeleted: { $ne: true } });
     const pageNum = req.query.page ? Math.max(1, Number(req.query.page)) : undefined;
@@ -56,8 +56,8 @@ router.get('/all', authenticateToken, checkPermission('settings.view'), async (r
   }
 });
 
-// POST /api/v1/departments - Create a new department (Super Admin / Admin)
-router.post('/', authenticateToken, checkPermission('settings.update'), async (req: AuthRequest, res: Response) => {
+// POST /api/v1/departments - Create a new department (Super Admin / Admin / Managers)
+router.post('/', authenticateToken, checkPermission('settings.update', 'employee.create'), async (req: AuthRequest, res: Response) => {
   try {
     const { name, code, description, status } = req.body;
 
@@ -106,8 +106,8 @@ router.post('/', authenticateToken, checkPermission('settings.update'), async (r
   }
 });
 
-// PUT /api/v1/departments/:id - Update an existing department (Super Admin / Admin)
-router.put('/:id', authenticateToken, checkPermission('settings.update'), async (req: AuthRequest, res: Response) => {
+// PUT /api/v1/departments/:id - Update an existing department (Super Admin / Admin / Managers)
+router.put('/:id', authenticateToken, checkPermission('settings.update', 'employee.update'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { name, code, description, status } = req.body;
@@ -159,8 +159,8 @@ router.put('/:id', authenticateToken, checkPermission('settings.update'), async 
   }
 });
 
-// DELETE /api/v1/departments/:id - Delete a department (Super Admin / Admin)
-router.delete('/:id', authenticateToken, checkPermission('settings.update'), async (req: AuthRequest, res: Response) => {
+// DELETE /api/v1/departments/:id - Delete a department (Super Admin / Admin / Managers)
+router.delete('/:id', authenticateToken, checkPermission('settings.update', 'employee.delete'), async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const department = await Department.findById(id);

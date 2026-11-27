@@ -12,6 +12,7 @@ export const DepartmentManagementView: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [modalError, setModalError] = useState<string | null>(null);
 
   // Modal State
   const [showModal, setShowModal] = useState(false);
@@ -65,6 +66,7 @@ export const DepartmentManagementView: React.FC = () => {
     setCode('');
     setDescription('');
     setStatus(0);
+    setModalError(null);
     setShowModal(true);
   };
 
@@ -74,6 +76,7 @@ export const DepartmentManagementView: React.FC = () => {
     setCode(dept.code || '');
     setDescription(dept.description || '');
     setStatus(dept.status === 1 || (dept.status as any) === 'Inactive' ? 1 : 0);
+    setModalError(null);
     setShowModal(true);
   };
 
@@ -96,6 +99,7 @@ export const DepartmentManagementView: React.FC = () => {
 
     setSaving(true);
     setMessage(null);
+    setModalError(null);
 
     try {
       let res;
@@ -123,10 +127,10 @@ export const DepartmentManagementView: React.FC = () => {
         setShowModal(false);
         fetchDepartments();
       } else {
-        setMessage({ type: 'error', text: res.message || 'Failed to save department' });
+        setModalError(res.message || 'Failed to save department');
       }
     } catch (err: any) {
-      setMessage({ type: 'error', text: err.message || 'Failed to save department' });
+      setModalError(err.message || 'Failed to save department');
     } finally {
       setSaving(false);
     }
@@ -397,6 +401,12 @@ export const DepartmentManagementView: React.FC = () => {
         maxWidth="max-w-md"
       >
         <form onSubmit={handleSaveDepartment} className="space-y-4">
+          {modalError && (
+            <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2 text-rose-700 text-xs font-bold">
+              <AlertCircle size={15} className="shrink-0 mt-0.5" />
+              <span>{modalError}</span>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-extrabold text-slate-700 uppercase mb-1">
               Department Name <span className="text-rose-500">*</span>
